@@ -1,7 +1,7 @@
 import { shortLabel } from '../capture';
 import { el, getHost } from './host';
 
-const WIDTH = 300;
+const WIDTH = 370;
 const GAP = 10;
 
 export interface ComposerOptions {
@@ -55,10 +55,8 @@ export function open(opts: ComposerOptions) {
   textarea.value = opts.initial ?? '';
   box.appendChild(textarea);
 
+  // Destructive action sits apart on the left; confirming actions group right.
   const row = el('div', 'row');
-  const hint = el('span', 'hint', '⌘↵ to save');
-  row.appendChild(hint);
-  row.appendChild(el('span', 'spacer'));
 
   if (opts.mode === 'edit' && opts.onDelete) {
     const del = el('button', 'danger', 'Delete');
@@ -68,6 +66,8 @@ export function open(opts: ComposerOptions) {
     });
     row.appendChild(del);
   }
+
+  row.appendChild(el('span', 'spacer'));
 
   if (opts.mode === 'edit' && opts.onResolve) {
     const resolve = el('button', 'ghost', 'Resolve');
@@ -92,6 +92,9 @@ export function open(opts: ComposerOptions) {
   row.appendChild(save);
 
   box.appendChild(row);
+
+  // On its own line, so a fourth button never squeezes the row.
+  box.appendChild(el('div', 'hint', '⌘↵ to save · Esc to cancel'));
 
   function commit() {
     const text = textarea.value.trim();

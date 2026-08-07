@@ -67,7 +67,8 @@ const STYLES = `
 
 .composer {
   position: fixed;
-  width: 300px;
+  width: 370px;
+  max-width: calc(100vw - 16px);
   background: var(--av-surface);
   border: 1px solid var(--av-border);
   border-radius: 10px;
@@ -123,6 +124,8 @@ button {
   cursor: pointer;
   background: transparent;
   color: var(--av-text);
+  white-space: nowrap;
+  flex: none;
 }
 
 button:hover { background: var(--av-hover); }
@@ -137,7 +140,11 @@ button.primary:disabled { opacity: 0.45; cursor: default; background: var(--av-b
 button.ghost { border-color: var(--av-border); }
 button.danger:hover { background: var(--av-danger-fill); color: var(--av-danger); }
 
-.hint { font-size: 11px; color: var(--av-muted); }
+.hint {
+  font-size: 11px;
+  color: var(--av-muted);
+  margin-top: -2px;
+}
 
 /* ---------- pins ---------- */
 
