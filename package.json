@@ -1,0 +1,35 @@
+{
+  "name": "agentivision",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Comment on any live webpage, export the feedback as a prompt for a coding agent.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "chrome-extension",
+    "arc-browser",
+    "annotation",
+    "code-review",
+    "ai-agent",
+    "developer-tools"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/run-selectors.mjs && node test/run-classnames.mjs && node test/run-export.mjs",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "package": "npm run build && node package.mjs",
+    "fixture": "python3 -m http.server 8731 --directory test"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.300",
+    "@types/jsdom": "^28.0.3",
+    "esbuild": "^0.25.0",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.7.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

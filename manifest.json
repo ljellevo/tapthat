@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Agentivision",
+  "version": "0.1.0",
+  "description": "Comment on any live webpage, then export the feedback as a prompt for a coding agent.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_title": "Toggle Agentivision (Alt+Shift+C)"
+  },
+  "commands": {
+    "toggle-annotate": {
+      "suggested_key": { "default": "Alt+Shift+C" },
+      "description": "Toggle annotation mode"
+    }
+  }
+}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Agentivision selector fixture</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  button { padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root">
+  <header class="site-header">
+    <nav class="nav">
+      <a href="/" class="nav-link">Home</a>
+      <a href="/pricing" class="nav-link">Pricing</a>
+      <a href="/docs" class="nav-link">Docs</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Repeated identical structures: the hard case for selectors -->
+    <section class="hero">
+      <h1>Build faster</h1>
+      <p class="lede">Ship your app in days, not months.</p>
+      <div class="cta">
+        <button class="btn btn-primary" data-testid="hero-cta">Get started</button>
+        <button class="btn">Learn more</button>
+      </div>
+    </section>
+
+    <section class="pricing">
+      <h2>Pricing</h2>
+      <div class="grid">
+        <div class="card"><h3>Free</h3><p>$0</p><button class="btn btn-primary">Choose</button></div>
+        <div class="card"><h3>Pro</h3><p>$20</p><button class="btn btn-primary">Choose</button></div>
+        <div class="card"><h3>Team</h3><p>$99</p><button class="btn btn-primary">Choose</button></div>
+      </div>
+    </section>
+
+    <!-- Framework-generated class names and ids that must NOT be used -->
+    <section class="css-1a2b3c4">
+      <h2>Generated names</h2>
+      <div class="Button_root__x7f3a">
+        <span class="sc-bdVaJa kXhFjL">styled-components output</span>
+      </div>
+      <div id="radix-:r3:">
+        <button id=":r7:" class="btn">Radix-style id</button>
+      </div>
+      <div class="grid">
+        <div class="card css-9z8y7x"><p>Generated card A</p></div>
+        <div class="card css-9z8y7x"><p>Generated card B</p></div>
+      </div>
+    </section>
+
+    <!-- Tailwind-style utilities including arbitrary values and variants -->
+    <section class="tw">
+      <h2>Utilities</h2>
+      <div class="flex items-center gap-4 md:gap-6 w-[calc(100%-2rem)]">
+        <button class="rounded-md bg-blue-600 px-4 py-2 hover:bg-blue-700">Tailwind button</button>
+        <button class="rounded-md bg-blue-600 px-4 py-2 hover:bg-blue-700">Tailwind button</button>
+      </div>
+    </section>
+
+    <!-- Deeply nested, no distinguishing attributes at all -->
+    <section class="deep">
+      <h2>Deep nesting</h2>
+      <div><div><div><div><div><span>needle</span></div></div></div></div></div>
+    </section>
+
+    <form class="signup">
+      <input type="email" name="email" placeholder="you@example.com" />
+      <input type="password" name="password" placeholder="Password" />
+      <button type="submit" class="btn btn-primary">Sign up</button>
+    </form>
+  </main>
+
+  <footer role="contentinfo"><p>© 2026</p></footer>
+</div>
+
+</body>
+</html>
