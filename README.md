@@ -23,10 +23,11 @@ hover an element  →  click  →  type "make this green"  →  Export  →  pas
 
 ```bash
 git clone <this repo> && cd agentivision
-npm install && npm run build
+npm install
 ```
 
-Then load unpacked as above, selecting the repo folder.
+`npm install` builds `dist/` for you. Then load unpacked as above, selecting the repo
+folder.
 
 ## Use
 

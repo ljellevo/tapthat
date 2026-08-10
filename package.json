@@ -16,6 +16,7 @@
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --watch",
+    "prepare": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node test/run-selectors.mjs && node test/run-classnames.mjs && node test/run-export.mjs",
     "check": "npm run typecheck && npm run test && npm run build",
