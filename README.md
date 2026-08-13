@@ -119,14 +119,13 @@ use it to review the exact payload after changing `capture.ts` or `export.ts`.
 
 ### Releasing
 
-Bump the version in **both** `package.json` and `manifest.json` (the package step
-fails if they disagree), then push a tag:
+Releases are automatic. Every push to `main` builds, tests, packages and
+publishes a release, bumping the hotfix number (`major.minor.hotfix`) from the
+latest tag — no manual version bump or tag push needed.
 
-```bash
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The release workflow builds, tests, packages and publishes the zip.
+For a major or minor bump, run the *Release* workflow manually from the
+Actions tab (or `gh workflow run release.yml -f version=1.1.0`) and type the
+version to release.
 
 ## Known limitations
 

@@ -8,3 +8,5 @@ test/_entry.ts
 test/_export-entry.ts
 .DS_Store
 .idea/
+
+.claude/

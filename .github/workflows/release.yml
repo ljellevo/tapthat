@@ -2,16 +2,27 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (major.minor.hotfix), e.g. 1.1.0 for a manual major/minor bump'
+        required: true
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -20,11 +31,55 @@ jobs:
 
       - run: npm ci
 
+      - name: Determine version
+        id: version
+        run: |
+          manual="${{ inputs.version }}"
+          if [ -n "$manual" ]; then
+            if ! [[ "$manual" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "version must be major.minor.hotfix, got: $manual" >&2
+              exit 1
+            fi
+            version="$manual"
+          else
+            latest="$(git tag --list '[0-9]*.[0-9]*.[0-9]*' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1)"
+            if [ -z "$latest" ]; then
+              version="0.1.0"
+            else
+              IFS=. read -r major minor hotfix <<< "$latest"
+              version="$major.$minor.$((hotfix + 1))"
+            fi
+          fi
+          if git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
+            echo "tag $version already exists" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set version in package.json and manifest.json
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const version = process.env.VERSION;
+            for (const file of ['package.json', 'manifest.json']) {
+              const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+              data.version = version;
+              fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+            }
+          "
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
       - name: Typecheck, test and build
         run: npm run check
 
       - name: Package the extension
         run: npm run package
+
+      - name: Tag release
+        run: |
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
 
       - name: Publish release
         env:
@@ -41,6 +96,6 @@ jobs:
           On `localhost` a floating button appears automatically. Elsewhere, use
           **Alt+Shift+C** or the toolbar icon.
           EOF
-          gh release create "$GITHUB_REF_NAME" agentivision.zip \
-            --title "$GITHUB_REF_NAME" \
+          gh release create "${{ steps.version.outputs.version }}" agentivision.zip \
+            --title "${{ steps.version.outputs.version }}" \
             --notes-file notes.md
