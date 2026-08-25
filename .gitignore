@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .package/
-agentivision.zip
+tapthat.zip
 test/sample-export.md
 test/harness.js
 test/_entry.ts
@@ -10,3 +10,4 @@ test/_export-entry.ts
 .idea/
 
 .claude/
+graphify-out/
