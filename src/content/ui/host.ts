@@ -1,6 +1,6 @@
 import { LAUNCHER_STYLES } from './launcher';
 
-const HOST_TAG = 'agentivision-root';
+const HOST_TAG = 'tapthat-root';
 
 const STYLES = `
 :host { all: initial; }

@@ -1,5 +1,5 @@
 {
-  "name": "agentivision",
+  "name": "tapthat",
   "version": "0.1.0",
   "private": true,
   "description": "Comment on any live webpage, export the feedback as a prompt for a coding agent.",

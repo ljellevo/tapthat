@@ -45,7 +45,7 @@ export async function mount(opts: PanelOptions) {
   node = el('div', 'panel');
 
   const head = el('div', 'panel-head');
-  head.appendChild(el('span', 'panel-title', 'Agentivision'));
+  head.appendChild(el('span', 'panel-title', 'TapThat'));
   countEl = el('span', 'panel-count', '0');
   head.appendChild(countEl);
   head.appendChild(el('span', 'spacer'));

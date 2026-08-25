@@ -1,7 +1,7 @@
 /**
- * Builds agentivision.zip — the artifact attached to GitHub releases.
+ * Builds tapthat.zip — the artifact attached to GitHub releases.
  *
- * Unzipping produces a single `agentivision/` folder that can be handed
+ * Unzipping produces a single `tapthat/` folder that can be handed
  * straight to "Load unpacked", so nobody has to think about which directory to
  * select.
  */
@@ -12,8 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const staging = join(root, '.package');
-const outDir = join(staging, 'agentivision');
-const zipPath = join(root, 'agentivision.zip');
+const outDir = join(staging, 'tapthat');
+const zipPath = join(root, 'tapthat.zip');
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
@@ -40,7 +40,7 @@ for (const entry of ['manifest.json', 'dist', 'README.md', 'LICENSE']) {
   cpSync(join(root, entry), join(outDir, entry), { recursive: true });
 }
 
-execFileSync('zip', ['-r', '-q', zipPath, 'agentivision'], { cwd: staging });
+execFileSync('zip', ['-r', '-q', zipPath, 'tapthat'], { cwd: staging });
 rmSync(staging, { recursive: true, force: true });
 
-console.log(`packaged agentivision.zip (v${manifest.version})`);
+console.log(`packaged tapthat.zip (v${manifest.version})`);

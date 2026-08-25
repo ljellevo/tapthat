@@ -1,6 +1,6 @@
 import * as highlight from './ui/highlight';
 
-const HOST_TAG = 'AGENTIVISION-ROOT';
+const HOST_TAG = 'TAPTHAT-ROOT';
 
 export interface PickerOptions {
   onPick(target: Element): void;
@@ -19,7 +19,7 @@ let frozen = false;
 let rafId = 0;
 let pendingEvent: MouseEvent | null = null;
 
-const STYLE_ID = 'agentivision-cursor-style';
+const STYLE_ID = 'tapthat-cursor-style';
 let styleEl: HTMLStyleElement | null = null;
 
 function isOurs(e: Event): boolean {
@@ -160,7 +160,7 @@ export function start(options: PickerOptions) {
       user-select: none !important;
       -webkit-user-select: none !important;
     }
-    agentivision-root, agentivision-root * { cursor: auto !important; user-select: auto !important; }
+    tapthat-root, tapthat-root * { cursor: auto !important; user-select: auto !important; }
   `;
   document.head.appendChild(styleEl);
 }

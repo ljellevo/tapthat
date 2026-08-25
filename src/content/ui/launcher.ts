@@ -48,8 +48,8 @@ export async function mount(opts: LauncherOptions) {
 
   node = el('button', 'launcher');
   node.type = 'button';
-  node.title = 'Agentivision — click to comment, drag to move';
-  node.setAttribute('aria-label', 'Toggle Agentivision annotation mode');
+  node.title = 'TapThat — click to comment, drag to move';
+  node.setAttribute('aria-label', 'Toggle TapThat annotation mode');
 
   const icon = el('span', 'launcher-icon');
   icon.innerHTML = ICON;

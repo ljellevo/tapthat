@@ -1,4 +1,4 @@
-# Agentivision
+# TapThat
 
 Comment on a **live webpage** the way you comment on a design, then export every
 comment as one markdown prompt with enough DOM context for a coding agent to find
@@ -14,15 +14,16 @@ hover an element  →  click  →  type "make this green"  →  Export  →  pas
 
 **From a release** (no tooling needed):
 
-1. Download `agentivision.zip` from [the latest release](../../releases/latest) and unzip it.
+1. Download `tapthat.zip` from [the latest release](../../releases/latest) and unzip it.
+![img_2.png](img_2.png)
 2. Open `chrome://extensions` (Chrome) or `arc://extensions` (Arc).
 3. Turn on **Developer mode**.
-4. Click **Load unpacked** and select the unzipped `agentivision` folder.
+4. Click **Load unpacked** and select the unzipped `tapthat` folder.
 
 **From source:**
 
 ```bash
-git clone <this repo> && cd agentivision
+git clone <this repo> && cd tapthat
 npm install
 ```
 
@@ -51,6 +52,8 @@ Then:
 | **Export** | Copy all open comments as one markdown prompt to the clipboard |
 
 Paste the result into Claude Code (or any agent) pointed at the app's repo.
+
+![Demo](demo.gif)
 
 Comments persist per-URL in `chrome.storage.local`, so they survive reloads and
 SPA navigation. Pins stay visible after you exit annotation mode; if a commented
@@ -101,7 +104,7 @@ Three decisions drive the quality of that payload:
 npm run dev      # watching build
 npm run check    # typecheck + tests + production build
 npm test         # selector, class-name and export-filtering checks
-npm run package  # build agentivision.zip
+npm run package  # build tapthat.zip
 ```
 
 `test/fixture.html` is a deliberately hostile page — repeated identical markup,
