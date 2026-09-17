@@ -1,12 +1,13 @@
 /**
  * Builds a full export document from the fixture page and prints it.
  * Use this to eyeball the exact payload an agent receives after changing
- * anything in capture.ts or export.ts.
+ * anything in capture.ts or the shared prompt builder.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { TEST_PAGE } from './page-context.mjs';
 import * as esbuild from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -25,7 +26,7 @@ const entry = resolve(here, '_entry.ts');
 writeFileSync(
   entry,
   `export { buildRecord } from '../src/content/capture';
-export { buildMarkdown } from '../src/content/export';`,
+export { buildMarkdown } from '@tapthat/shared';`,
 );
 
 const bundle = await esbuild.build({
@@ -48,7 +49,7 @@ const comments = [
 ];
 
 const records = comments.map(([el, text], i) => buildRecord(el, text, i + 1));
-const markdown = buildMarkdown(records);
+const markdown = buildMarkdown(records, TEST_PAGE);
 
 writeFileSync(resolve(here, 'sample-export.md'), markdown);
 console.log(markdown);

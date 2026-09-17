@@ -1,6 +1,7 @@
 import type { CommentRecord } from '../types';
 import { buildRecord } from './capture';
 import { buildMarkdown, copyToClipboard } from './export';
+import { pageContext } from './page';
 import * as picker from './picker';
 import * as store from './store';
 import * as composer from './ui/composer';
@@ -165,7 +166,7 @@ async function doExport() {
     toast(store.list().length ? 'All comments are resolved' : 'No comments to export');
     return;
   }
-  const markdown = buildMarkdown(records);
+  const markdown = buildMarkdown(records, pageContext());
   const ok = await copyToClipboard(markdown);
   toast(
     ok

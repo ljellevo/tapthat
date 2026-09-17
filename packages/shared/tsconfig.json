@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // No DOM, no node. This package renders the prompt that BOTH the extension
+    // and the sidecar send, so a stray `document.` or `innerWidth` here would be
+    // a runtime crash in the sidecar. Making it a typecheck failure is the whole
+    // mechanism that keeps the two prompts from drifting apart.
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src"]
+}

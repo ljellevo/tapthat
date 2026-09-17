@@ -1,53 +1,17 @@
-export interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+/**
+ * Capture and prompt types live in @tapthat/shared so the extension and the
+ * sidecar render the same payload. Re-exported here so the ~12 existing
+ * `from '../types'` imports keep working.
+ */
+export type {
+  AncestorRef,
+  CommentRecord,
+  PageContext,
+  PageSession,
+  Rect,
+} from '@tapthat/shared';
 
-export interface AncestorRef {
-  tag: string;
-  id?: string;
-  classes?: string[];
-}
-
-export interface CommentRecord {
-  id: string;
-  n: number;
-  comment: string;
-  createdAt: string;
-
-  /** Unique CSS selector, verified to resolve to exactly one node at capture time. */
-  selector: string;
-  /** Readable ancestor chain, e.g. "body > div#root > main > section.hero > button.btn". */
-  domPath: string;
-  tagName: string;
-  attributes: Record<string, string>;
-  text: string;
-  html: string;
-  ancestors: AncestorRef[];
-  landmark: string | null;
-  nearestHeading: string | null;
-  siblingIndex: number;
-  siblingCount: number;
-  rect: Rect;
-  styles: Record<string, string>;
-
-  /** Set during rehydration when the selector no longer resolves on the page. */
-  stale?: boolean;
-
-  /** Resolved comments are hidden from the page and left out of exports. */
-  resolved?: boolean;
-  resolvedAt?: string;
-}
-
-export interface PageSession {
-  key: string;
-  url: string;
-  title: string;
-  comments: CommentRecord[];
-}
-
+/** Chrome runtime messaging — extension-only, never crosses the wire. */
 export type BackgroundMessage =
   | { type: 'TOGGLE' }
   | { type: 'PING' };
