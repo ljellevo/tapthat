@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(root, '..', '..');
 const staging = join(root, '.package');
 const outDir = join(staging, 'tapthat');
 const zipPath = join(root, 'tapthat.zip');
@@ -36,9 +37,12 @@ rmSync(staging, { recursive: true, force: true });
 rmSync(zipPath, { force: true });
 mkdirSync(outDir, { recursive: true });
 
-for (const entry of ['manifest.json', 'dist', 'README.md', 'LICENSE']) {
+// README.md is package-local (written for someone who just unzipped a folder);
+// LICENSE lives at the repo root and is shared by every package.
+for (const entry of ['manifest.json', 'dist', 'README.md']) {
   cpSync(join(root, entry), join(outDir, entry), { recursive: true });
 }
+cpSync(join(repoRoot, 'LICENSE'), join(outDir, 'LICENSE'));
 
 execFileSync('zip', ['-r', '-q', zipPath, 'tapthat'], { cwd: staging });
 rmSync(staging, { recursive: true, force: true });

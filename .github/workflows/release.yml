@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+    # Without this, a sidecar-only commit cuts a pointless extension release.
+    paths:
+      - 'packages/extension/**'
+      - 'packages/shared/**'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
     inputs:
       version:
@@ -61,7 +66,7 @@ jobs:
           node -e "
             const fs = require('node:fs');
             const version = process.env.VERSION;
-            for (const file of ['package.json', 'manifest.json']) {
+            for (const file of ['packages/extension/package.json', 'packages/extension/manifest.json']) {
               const data = JSON.parse(fs.readFileSync(file, 'utf8'));
               data.version = version;
               fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
@@ -96,6 +101,6 @@ jobs:
           On `localhost` a floating button appears automatically. Elsewhere, use
           **Alt+Shift+C** or the toolbar icon.
           EOF
-          gh release create "${{ steps.version.outputs.version }}" tapthat.zip \
+          gh release create "${{ steps.version.outputs.version }}" packages/extension/tapthat.zip \
             --title "${{ steps.version.outputs.version }}" \
             --notes-file notes.md

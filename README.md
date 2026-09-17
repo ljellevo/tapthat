@@ -1,21 +1,39 @@
 # TapThat
 
-Comment on a **live webpage** the way you comment on a design, then export every
-comment as one markdown prompt with enough DOM context for a coding agent to find
-the matching source and apply the change.
+Comment on a **live webpage** the way you comment on a design — then either export the
+feedback as a prompt for your coding agent, or have an agent apply it to the running dev
+site within seconds.
 
-Chromium MV3 extension — works in Chrome and Arc. No build step required to use it.
+Chromium MV3 extension — works in Chrome and Arc.
 
 ```
-hover an element  →  click  →  type "make this green"  →  Export  →  paste into your agent
+hover an element  →  click  →  type "make this green"  →  Export or Apply
 ```
 
-## Install
+![Demo](demo.gif)
+
+## Two ways to run it
+
+|  | **TapThat Light** | **TapThat Full** |
+| --- | --- | --- |
+| What it does | Comment → **Export** → paste into your agent | Comment → **Apply** → the change appears in the dev site |
+| Install | Load the extension. That's it. | Extension **+** a sidecar beside your dev server |
+| Needs | Nothing | Node or Docker, a git checkout, a Claude credential |
+| Who it's for | Developers with the repo already open | Designers, PMs, QA — no checkout, no CLI |
+| Network | None. The extension never phones home. | Extension ↔ your own sidecar, on your own network |
+
+**It's one extension, not two downloads.** Light is what you get out of the box.
+Configuring a sidecar URL in the options page is the entire difference between the two,
+and clearing it puts you back in Light.
+
+---
+
+## Install — Light
 
 **From a release** (no tooling needed):
 
 1. Download `tapthat.zip` from [the latest release](../../releases/latest) and unzip it.
-![img_2.png](img_2.png)
+   ![img_2.png](img_2.png)
 2. Open `chrome://extensions` (Chrome) or `arc://extensions` (Arc).
 3. Turn on **Developer mode**.
 4. Click **Load unpacked** and select the unzipped `tapthat` folder.
@@ -25,21 +43,21 @@ hover an element  →  click  →  type "make this green"  →  Export  →  pas
 ```bash
 git clone <this repo> && cd tapthat
 npm install
+npm run build
 ```
 
-`npm install` builds `dist/` for you. Then load unpacked as above, selecting the repo
-folder.
+Then load unpacked as above, selecting `packages/extension/`.
 
-## Use
+That is the whole install. Light needs no server, no account and no configuration.
+
+### Use
 
 Activate annotation mode in any of three ways:
 
-- The **floating button**, which appears automatically on localhost and other local
-  dev hosts. Drag it anywhere; the position is remembered across pages and sessions.
+- The **floating button**, which appears automatically on localhost and other local dev
+  hosts. Drag it anywhere; the position is remembered across pages and sessions.
 - **Alt+Shift+C** (rebindable at `chrome://extensions/shortcuts` or `arc://extensions/shortcuts`)
 - The toolbar icon
-
-Then:
 
 | Action | Result |
 | --- | --- |
@@ -53,26 +71,101 @@ Then:
 
 Paste the result into Claude Code (or any agent) pointed at the app's repo.
 
-![Demo](demo.gif)
-
-Comments persist per-URL in `chrome.storage.local`, so they survive reloads and
-SPA navigation. Pins stay visible after you exit annotation mode; if a commented
-element no longer exists, its pin greys out and the export flags it as stale.
+Comments persist per-URL in `chrome.storage.local`, so they survive reloads and SPA
+navigation. Pins stay visible after you exit annotation mode; if a commented element no
+longer exists, its pin greys out and the export flags it as stale.
 
 ### Resolving
 
 Mark a comment resolved with the ✓ in the panel, or **Resolve** in the comment box.
-Resolved comments disappear from the page — no pin, no badge count — and are
-**left out of exports**, so an agent is never asked to redo finished work.
+Resolved comments disappear from the page — no pin, no badge count — and are **left out of
+exports**, so an agent is never asked to redo finished work.
 
-They aren't deleted. The **Resolved (n)** button next to *Clear all* switches the
-panel to the resolved list, where ↩ reopens a comment and ✕ deletes it for good.
+They aren't deleted. The **Resolved (n)** button next to *Clear all* switches the panel to
+the resolved list, where ↩ reopens a comment and ✕ deletes it for good.
+
+---
+
+## Install — Full
+
+> **Status: not yet shipped.** The sidecar is in development. This section is the target
+> shape of the install; the commands below won't work until `@tapthat/sidecar` is
+> published. Light works today.
+
+> ⚠️ **The sidecar must never run in production.** It accepts instructions that modify
+> your repository, and it is a development tool only. See [docs/security.md](docs/security.md)
+> for the isolation guards and why each one exists.
+
+Full adds a **sidecar**: a small process that runs beside your dev server, in the same
+working tree. When a reviewer hits Apply, the sidecar runs an agent over your repo, your
+dev server's HMR pushes the change to their browser, and the edit is committed in the
+background.
+
+```
+Chrome extension ──POST──▶ sidecar ──claude -p──▶ edits files
+                                          ├─▶ HMR pushes to the browser   (~15-45s)
+                                          └─▶ git commit + push (async)
+```
+
+### 1. Run the sidecar
+
+In the repo you want edited, beside your dev server:
+
+```bash
+npm i -D @tapthat/sidecar          # devDependency only, never a production dep
+npx tapthat-sidecar init           # writes tapthat.config.json, prints what to paste
+npx tapthat-sidecar                # run it
+```
+
+`init` generates an auth token and an encryption key, and prints the exact values for the
+next step. For Docker Compose and hosted dev environments, see [docs/setup.md](docs/setup.md).
+
+### 2. Point the extension at it
+
+Open the extension's options page and set:
+
+- **Sidecar URL** and **token** — both printed by `init`
+- **Allowed origins** — your dev site's origin. The extension only offers Apply on
+  allowlisted origins; this is a security boundary, not a convenience feature.
+- **Your Claude credential** — paste it once. It is sent to the sidecar, stored there, and
+  never returned to the browser; afterwards you only ever see the last four characters.
+  Each user supplies their own, so token cost and rate limits land on their own account.
+
+An **Apply to dev** button appears next to Export. Export keeps working — it's the
+fallback whenever the sidecar is down.
+
+### 3. Verify
+
+```bash
+curl http://localhost:7420/healthz
+```
+
+```json
+{
+  "status": "ok",
+  "repo": { "branch": "dev", "head": "a1b2c3d", "clean": true },
+  "devServer": { "reachable": true, "url": "http://localhost:5173" },
+  "queue": { "depth": 0, "running": false }
+}
+```
+
+Then the end-to-end check: open the dev site, select an element, submit a trivial comment
+("make this text red"), and confirm three things **in order** —
+
+1. The status moves through queued → editing → live
+2. The browser updates without a manual refresh
+3. `git log` on the branch shows a new commit
+
+If step 2 fails but step 3 succeeds, the shared volume mount or the file watcher is the
+problem, not the agent.
+
+---
 
 ## What gets exported
 
-Per comment: a verified-unique CSS selector, a readable DOM path, the element's
-text and HTML, the enclosing landmark and its heading, sibling position, size and
-position, and the non-default computed styles.
+Per comment: a verified-unique CSS selector, a readable DOM path, the element's text and
+HTML, the enclosing landmark and its heading, sibling position, size and position, and the
+non-default computed styles.
 
 ```markdown
 ## 1. Make this button green and a bit larger than the other two.
@@ -86,29 +179,41 @@ position, and the non-default computed styles.
 - **Key styles:** `display: inline-block; padding: 8px 14px; border-radius: 6px`
 ```
 
+Both modes send the same payload — Export writes it to your clipboard, Apply sends it to
+the sidecar. One builder renders both, so they cannot drift apart.
+
 Three decisions drive the quality of that payload:
 
 - **Generated class names are rejected.** `css-1a2b3c4`, `sc-bdVaJa`, `kXhFjL`,
-  `Button_root__x7f3a` and Tailwind arbitrary values change between builds, so a
-  selector built on them is dead on arrival. See `isStableClass` in `src/content/capture.ts`.
-- **Selectors keep a greppable anchor.** A chain of bare tags (`div > div > span`)
-  can be unique yet tells an agent nothing, so the builder keeps walking for a named
-  ancestor rather than settling for the first unique result.
+  `Button_root__x7f3a` and Tailwind arbitrary values change between builds, so a selector
+  built on them is dead on arrival. See `isStableClass` in
+  `packages/extension/src/content/capture.ts`.
+- **Selectors keep a greppable anchor.** A chain of bare tags (`div > div > span`) can be
+  unique yet tells an agent nothing, so the builder keeps walking for a named ancestor
+  rather than settling for the first unique result.
 - **Headings are scoped to their own landmark.** A heading borrowed from an earlier,
-  unrelated section reads as authoritative and sends the agent to the wrong file, so
-  it's omitted rather than guessed.
+  unrelated section reads as authoritative and sends the agent to the wrong file, so it's
+  omitted rather than guessed.
 
 ## Develop
 
+npm workspaces monorepo — run everything from the repo root:
+
 ```bash
-npm run dev      # watching build
-npm run check    # typecheck + tests + production build
-npm test         # selector, class-name and export-filtering checks
-npm run package  # build tapthat.zip
+npm run dev       # watching build of the extension
+npm run check     # typecheck + tests + production build, across workspaces
+npm test          # selector, class-name and export-filtering checks
+npm run package   # build packages/extension/tapthat.zip
 ```
 
-`test/fixture.html` is a deliberately hostile page — repeated identical markup,
-framework hash classes, Tailwind arbitrary values, deep anonymous nesting. Serve it
+| Package | What it is |
+| --- | --- |
+| `packages/extension` | The Chromium MV3 extension. Private. |
+| `packages/shared` | Types, HTTP protocol, and the one prompt builder. Private, never published. |
+| `packages/sidecar` | `@tapthat/sidecar` — the agent runner. Published to npm and ghcr. |
+
+`packages/extension/test/fixture.html` is a deliberately hostile page — repeated identical
+markup, framework hash classes, Tailwind arbitrary values, deep anonymous nesting. Serve it
 and annotate it by hand to exercise the extension:
 
 ```bash
@@ -117,28 +222,28 @@ npm run fixture   # then open http://localhost:8731/fixture.html
 
 Because it's on localhost, the floating button appears automatically.
 
-`node test/sample-export.mjs` prints a complete export built from that fixture —
-use it to review the exact payload after changing `capture.ts` or `export.ts`.
+`node packages/extension/test/sample-export.mjs` prints a complete export built from that
+fixture — use it to review the exact payload after changing `capture.ts` or the prompt
+builder.
 
 ### Releasing
 
-Releases are automatic. Every push to `main` builds, tests, packages and
-publishes a release, bumping the hotfix number (`major.minor.hotfix`) from the
+Releases are automatic. Every push to `main` that touches the extension builds, tests,
+packages and publishes a release, bumping the hotfix number (`major.minor.hotfix`) from the
 latest tag — no manual version bump or tag push needed.
 
-For a major or minor bump, run the *Release* workflow manually from the
-Actions tab (or `gh workflow run release.yml -f version=1.1.0`) and type the
-version to release.
+For a major or minor bump, run the *Release* workflow manually from the Actions tab (or
+`gh workflow run release.yml -f version=1.1.0`) and type the version to release.
 
 ## Known limitations
 
-- **Iframes aren't supported** (`all_frames: false`). Elements inside an iframe
-  can't be selected.
-- Selectors are captured against the page as it was. Heavily dynamic lists may
-  re-anchor to a different item after a data change; such pins are flagged stale
-  only when the selector resolves to nothing at all.
-- Pages the browser blocks content scripts on (`chrome://`, `arc://`, the Web
-  Store, PDF viewer) can't be annotated.
+- **Iframes aren't supported** (`all_frames: false`). Elements inside an iframe can't be
+  selected.
+- Selectors are captured against the page as it was. Heavily dynamic lists may re-anchor to
+  a different item after a data change; such pins are flagged stale only when the selector
+  resolves to nothing at all.
+- Pages the browser blocks content scripts on (`chrome://`, `arc://`, the Web Store, PDF
+  viewer) can't be annotated.
 
 ## License
 

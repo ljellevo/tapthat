@@ -28,5 +28,5 @@ jobs:
         with:
           name: tapthat-unpacked
           path: |
-            manifest.json
-            dist/
+            packages/extension/manifest.json
+            packages/extension/dist/
