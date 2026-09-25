@@ -16,6 +16,20 @@ testing TapThat Full against a real Next.js app on a Railway-shaped container.
 | `Could not clone …` | Private repository, or wrong URL | Set `TAPTHAT_GIT_TOKEN`; keep credentials out of the URL |
 | Railway health check fails on the first deploy | Clone and `npm ci` take longer than the timeout | Raise the health check timeout to 900 s; later boots are fast |
 
+## Playground sessions
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Configuration problems: devServer.command required…` right after the first deploy | Before 0.1.0 the env-only first pass was validated before the repo supplying the rest was cloned | Fixed: the first pass is provisional, and the committed config completes it |
+| Apply says "Start a session first" | The sidecar is in `git.mode: "session"` and no session is active | Press **Start session** in the panel |
+| Start session fails: `pg_dump: error: aborting because of server version mismatch` | The image's client is older than `dev`'s Postgres | Rebuild with `--build-arg PG_MAJOR=<server major>` |
+| "The source user cannot read role passwords" | The copy's login lacks `pg_read_all_data` | `GRANT pg_read_all_data TO <role>`; data rooms can't log in until then |
+| Data rooms fail to open after a copy | The playground's `TENANCY_MASTER_KEY` or database passwords differ from `dev`'s | Set them to `dev`'s values; see playground.md, "Values that must match dev" |
+| Commit to dev: "Someone changed the same lines on dev" | `dev` moved and conflicts with the session | Nothing was sent. A developer merges by hand, then Discard and start again |
+| Commit to dev: "has changes that were never committed" | A batch's build broke and left edits | Undo it, or apply a fix, then Commit |
+| The session shows "The sidecar restarted while…" | A restart landed mid-Start/Commit/Discard | Discard, then Start again |
+| Previews of documents are missing in the playground | Files live on `storage`'s volume, which the copy doesn't include | Known limitation; metadata and lists are correct |
+
 ## The dev server
 
 | Symptom | Cause | Fix |

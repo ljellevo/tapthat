@@ -62,8 +62,8 @@ async function loadSecretsFile(cwd: string): Promise<void> {
   }
 }
 
-async function readConfig(cwd = process.cwd()): Promise<Config | null> {
-  const { config, problems, source } = await loadConfig(cwd);
+async function readConfig(cwd = process.cwd(), provisional = false): Promise<Config | null> {
+  const { config, problems, source } = await loadConfig(cwd, process.env, { provisional });
   if (problems.length) {
     console.error(`Configuration problems${source ? ` in ${source}` : ''}:`);
     for (const p of problems) console.error(`  - ${p}`);
@@ -278,7 +278,7 @@ async function cmdRunFile(path: string): Promise<number> {
 }
 
 async function cmdServe(): Promise<number> {
-  let config = await readConfig();
+  let config = await readConfig(process.cwd(), true);
   if (!config) return 78;
 
   const token = process.env.TAPTHAT_TOKEN ?? null;
@@ -313,6 +313,12 @@ async function cmdServe(): Promise<number> {
       console.error(moreProblems);
       return 78;
     }
+  } else {
+    // No committed config after all: the environment is the whole config, so
+    // hold it to the full rules.
+    const final = await readConfig(process.cwd());
+    if (!final) return 78;
+    config = final;
   }
 
   const store = await Store.open(Store.defaultPath(config.repoRoot));
@@ -408,7 +414,9 @@ async function cmdServe(): Promise<number> {
   console.log(`  TapThat sidecar ready on ${config.host}:${config.port}`);
   for (const e of workspace.entries) {
     const label = workspace.multi ? `repo    ${e.name.padEnd(8)}` : 'repo    ';
-    console.log(`  ${label}${e.repo.root} @ ${e.config?.branch ?? config.branch} (${await e.repo.head()})`);
+    // The branch actually checked out: mid-session, that is the session branch.
+    const on = await e.repo.branch().catch(() => e.config?.branch ?? config.branch);
+    console.log(`  ${label}${e.repo.root} @ ${on} (${await e.repo.head()})`);
   }
   console.log(`  agent   ${config.agent.command} ${agentVersion ?? '(not found)'} [${config.agent.allowedTools}]`);
   console.log(`  proxy   ${config.proxy.enabled ? `on → ${config.proxy.target ?? config.devServerUrl}` : 'off'}`);

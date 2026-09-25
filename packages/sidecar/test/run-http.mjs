@@ -257,6 +257,14 @@ server.close();
   const clash = await loadConfig(repoDir, {
     ...railway, TAPTHAT_PROXY: '1', TAPTHAT_DEV_SERVER: 'http://localhost:8080',
   });
+  // On a PaaS the first pass sees only the env; the repo it clones supplies the rest.
+  const firstPass = { ...railway, TAPTHAT_START_DEV_SERVER: '1', TAPTHAT_REPO_URL: 'https://example.com/app.git' };
+  const emptyDir = mkdtempSync(join(tmpdir(), 'no-config-'));
+  check('the provisional first pass defers what the cloned repo may supply',
+    (await loadConfig(emptyDir, firstPass, { provisional: true })).problems.length === 0);
+  check('the final pass still requires a dev command',
+    (await loadConfig(emptyDir, firstPass)).problems.some((p) => p.includes('devServer.command')));
+
   check("a dev server on the sidecar's own port is a config error",
     clash.problems.some((p) => p.includes("sidecar's own port")), clash.problems.join('; '));
 

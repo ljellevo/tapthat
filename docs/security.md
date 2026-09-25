@@ -121,6 +121,22 @@ without any credential in its environment. On failure the batch ends in
 `applied-unverified`, shown amber in the panel with the compiler output, and nothing is
 committed.
 
+## A playground environment
+
+[playground.md](playground.md) adds a few things to the threat model:
+
+- **Commit to dev pushes code.** Anyone with the token can send a session to `dev`. It
+  never touches `main`, and `dev` stays reviewable in git like any other branch, but treat
+  the token accordingly. `TAPTHAT_GIT_TOKEN` should reach only the workspace's
+  repositories, and only their `dev` branch if your host can scope it.
+- **A public read path into `dev`'s data.** The copy reads `dev`'s Postgres through a TCP
+  proxy. Use a dedicated role with `pg_read_all_data` only, and a long password. That role
+  can read everything, **password hashes included**, so it must not exist in production.
+- **The dumps live on the workspace volume** until the next Start, including role password
+  hashes. The volume is as sensitive as `dev`'s database.
+- **Connection URLs are secrets.** They are registered for scrubbing, so a failed copy
+  reports the Postgres client's message without the password.
+
 ## Limits and the kill switch
 
 - `limits.batchesPerHourPerCredential` (default 20) stops a runaway client from burning

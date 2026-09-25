@@ -26,6 +26,10 @@ Pick the one that matches where your dev server runs:
 - **[B. Docker Compose](#b-docker-compose)**: your dev stack is a `docker-compose` file.
 - **[C. Railway](#c-railway-or-another-hosted-platform)** or another hosted platform: the
   dev site has a public URL that reviewers open.
+- **[D. A playground environment](docs/playground.md)**: reviewers change several services
+  at once (say the app *and* its API) in a separate environment, then send everything to
+  your `dev` branch with one **Commit to dev**. It builds on C; follow the playground
+  guide.
 
 What you need for all three:
 
@@ -230,6 +234,11 @@ Works in Chrome, Arc, Edge, Brave and other Chromium browsers.
       committed**, and the page updates by itself, usually within a minute.
    5. Happy with it? Press **Resolve** to clear the comments. Not happy? **Undo** reverts
       the change.
+
+   **On a playground**, the panel first shows **Start session**. It copies the latest
+   from the test site and takes a few minutes. Changes then collect in the session until
+   someone presses **Commit to dev**. The **?** guide explains it under "Playground
+   sessions".
 
 If something goes wrong, the panel shows the reason in plain text, with a **Copy**
 button to send to your developer. **Export** always keeps working as a fallback.

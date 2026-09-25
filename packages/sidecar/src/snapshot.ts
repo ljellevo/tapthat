@@ -182,7 +182,7 @@ export function makeSnapshotHooks(deps: SnapshotDeps): SessionHooks {
   addSecret(snapshot.target);
   const current = join(deps.dir, 'current');
 
-  async function restore(progress: Progress, what: 'Copying' | 'Restoring'): Promise<void> {
+  async function restore(progress: Progress, what: 'Loading into the playground' | 'Restoring'): Promise<void> {
     const manifest = JSON.parse(await readFile(join(current, 'manifest.json'), 'utf8')) as Manifest;
     const steps = manifest.databases.length;
 
@@ -200,7 +200,7 @@ export function makeSnapshotHooks(deps: SnapshotDeps): SessionHooks {
         await psql(snapshot.target, `DROP DATABASE IF EXISTS ${quoteIdent(db)} WITH (FORCE)`);
       }
       for (const [i, db] of manifest.databases.entries()) {
-        progress(`${what} data from dev… ${db}`, i + 1, steps);
+        progress(`${what}… ${db}`, i + 1, steps);
         // WITH (FORCE) ends the connections of services that stayed up (auth,
         // storage); they reconnect on their next query.
         await psql(snapshot.target, `DROP DATABASE IF EXISTS ${quoteIdent(db)} WITH (FORCE)`);
@@ -234,7 +234,7 @@ export function makeSnapshotHooks(deps: SnapshotDeps): SessionHooks {
       const manifest: Manifest = { takenAt: new Date().toISOString(), databases, rolesWithPasswords: roles.passwords };
       await writeFile(join(current, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-      await restore(progress, 'Copying');
+      await restore(progress, 'Loading into the playground');
       for (const command of deps.onStart ?? []) {
         progress(`Running ${command}…`);
         await deps.runCommand?.(command);

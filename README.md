@@ -114,7 +114,8 @@ TAPTHAT_ENABLE=1 npx tapthat-sidecar
 ```
 
 For Docker Compose and hosted dev environments such as Railway, see
-[docs/setup.md](docs/setup.md).
+[docs/setup.md](docs/setup.md). To let reviewers change several services at once and send
+the result to `dev` in one step, run a [playground environment](docs/playground.md).
 
 **2. Point the extension at it.** In the extension's options page, paste the **Sidecar
 URL** and **token** that the sidecar printed, then **Save & test**. The allowed sites fill

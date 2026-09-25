@@ -26,6 +26,7 @@ Pick the path that matches how your dev environment runs:
 | [1. npx](#path-1--npx) | You run the dev server on your own machine | started by you |
 | [2. Docker Compose](#path-2--docker-compose) | The dev stack is a compose file | a neighbouring container |
 | [3. Railway / single-container PaaS](#path-3--railway-and-other-single-container-hosts) | The dev environment is hosted, one port per service | started by the sidecar |
+| [4. A playground environment](playground.md) | Non-developers should change several services and send the result to `dev` in one step | started by the sidecar, one per repo |
 
 ## Prerequisites
 
@@ -363,8 +364,12 @@ committed file:
 | `tapthat-sidecar run-file batch.json` | Runs one batch from a file, no HTTP. For testing prompts against a scratch checkout |
 | `tapthat-sidecar audit-prod` | Fails if the sidecar appears in a production dependency tree or deploy file. Run it in CI |
 
+Several repositories, sessions and the database copy have their own settings: see
+[playground.md](playground.md#settings).
+
 ## Next
 
+- [playground.md](playground.md): a separate environment for cross-service changes, sent to `dev` on Commit
 - [security.md](security.md): the threat model and what each guard is for
 - [api.md](api.md): the HTTP surface, for anyone building another client
 - [troubleshooting.md](troubleshooting.md): symptoms, causes and fixes

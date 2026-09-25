@@ -39,6 +39,32 @@ requests.
 - Docker image `ghcr.io/ljellevo/tapthat-sidecar` with git and the Claude Code CLI; drops
   root on start.
 
+### Playground environments and changes across services
+
+- **Workspaces:** one sidecar owns several repositories (`repos[]`), and one batch may
+  change any of them. It lands in all or none:
+  - verify runs per repo, and a break anywhere commits nothing;
+  - Undo is all-or-nothing;
+  - `mirrors` keep shared folders (Dealroom's contracts) in step.
+- **Sessions** (`git.mode: "session"`):
+  - Start session brings every repo, and with `session.snapshot` the data, up to date
+    with `dev`.
+  - Batches collect on a local session branch.
+  - Commit to dev squashes per repo, replays onto the latest `dev`, checks every repo
+    before pushing any, and pushes in `deployOrder`.
+  - Discard puts the code and the data back.
+- **Database copy:** roles (with passwords, via a read-only `pg_read_all_data` login),
+  every database via pg_dump/pg_restore, and a Redis flush. The dumps are the session's
+  restore point.
+- **Extension:** a session strip with Start session, progress, pending changes with
+  reviewer names, and two-click Commit to dev / Discard all. Per-repo commits and branch
+  line, and an optional "Your name".
+- **Fixed:**
+  - The Full-mode footer clipped Export (the panel is now 364px).
+  - Dev servers started through a shell weren't fully stopped.
+  - The env-only first config pass on a PaaS was validated before the repo that completes
+    it was cloned.
+
 ### Fixed during Railway validation
 
 - The spawned dev server took the sidecar's `PORT`.

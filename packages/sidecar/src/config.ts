@@ -208,7 +208,11 @@ export interface LoadResult {
  * first one — a misconfigured sidecar should tell you everything that is wrong
  * in one go, not make you fix it one line per restart.
  */
-export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<LoadResult> {
+export async function loadConfig(
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  opts: { provisional?: boolean } = {},
+): Promise<LoadResult> {
   const problems: string[] = [];
   const base = defaults(cwd);
   let source: string | null = null;
@@ -320,7 +324,10 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
       'repoUrl: contains credentials. Put the token in TAPTHAT_GIT_TOKEN instead — a URL with a token in it ends up in .git/config and in error messages.',
     );
   }
-  if (config.devServer.start && !config.devServer.command) {
+  // Provisional: on a PaaS the first pass sees only the environment, and the
+  // repository it is about to clone may carry the rest in its committed config.
+  const completedLater = opts.provisional && !source && !!config.repoUrl;
+  if (config.devServer.start && !config.devServer.command && !completedLater) {
     problems.push('devServer.command: required when devServer.start is true (TAPTHAT_DEV_COMMAND)');
   }
   // Unauthenticated + reachable off-box is a repo-write primitive for anyone who
