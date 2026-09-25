@@ -11,6 +11,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const url = $<HTMLInputElement>('url');
 const token = $<HTMLInputElement>('token');
 const origins = $<HTMLTextAreaElement>('origins');
+const reviewer = $<HTMLInputElement>('reviewer');
 const result = $<HTMLDivElement>('result');
 const credState = $<HTMLDivElement>('cred-state');
 const cred = $<HTMLInputElement>('cred');
@@ -26,6 +27,7 @@ function paint(s: Settings) {
   url.value = s.sidecarUrl ?? '';
   token.value = s.token ?? '';
   origins.value = s.allowedOrigins.join('\n');
+  reviewer.value = s.reviewerName ?? '';
   modeEl.textContent = s.sidecarUrl ? 'Full' : 'Light';
   credState.textContent = s.credential
     ? `Connected •••• ${s.credential.fingerprint} (${s.credential.kind === 'oauth_token' ? 'OAuth token' : 'API key'})`
@@ -88,6 +90,7 @@ $('save').addEventListener('click', async () => {
     sidecarUrl,
     token: token.value.trim() || null,
     allowedOrigins: [...new Set(parsed as string[])],
+    reviewerName: reviewer.value.trim().slice(0, 80) || null,
   });
   paint(next);
   if (!sidecarUrl) {

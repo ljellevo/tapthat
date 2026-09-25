@@ -73,6 +73,8 @@
       <label for="origins">Sites that get Apply to dev</label>
       <textarea id="origins" placeholder="https://your-dev-app.up.railway.app&#10;http://localhost:5173" spellcheck="false"></textarea>
       <p class="hint" style="margin-top:6px">One per line. Leave empty to use the sidecar's own list. Every other site stays Light.</p>
+      <label for="reviewer">Your name <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <input id="reviewer" type="text" placeholder="Shown to teammates next to the changes you apply" autocomplete="name" />
       <div class="row">
         <button class="primary" id="save">Save &amp; test</button>
         <button id="test">Test connection</button>

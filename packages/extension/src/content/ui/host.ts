@@ -175,7 +175,9 @@ button.danger:hover { background: var(--av-danger-fill); color: var(--av-danger)
   position: fixed;
   right: 16px;
   bottom: 16px;
-  width: 320px;
+  /* Wide enough for Clear all · Resolved · Apply to dev · Export on one row. */
+  width: 364px;
+  max-width: calc(100vw - 32px);
   max-height: 70vh;
   background: var(--av-surface);
   border: 1px solid var(--av-border);
@@ -395,6 +397,44 @@ button:disabled:hover { background: transparent; }
 .panel-status[hidden] { display: none; }
 .panel-status.tone-warn { color: var(--av-warn); background: var(--av-warn-fill); }
 .panel-status.tone-error { color: var(--av-danger); background: var(--av-danger-fill); }
+
+/* ---------- playground session ---------- */
+
+.session {
+  border-top: 1px solid var(--av-border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.session[hidden] { display: none; }
+.session-head { display: flex; align-items: center; gap: 4px; }
+.session-title { flex: 1; font-size: 12px; font-weight: 600; }
+.session-detail { font-size: 11.5px; color: var(--av-muted); }
+.session-lines {
+  font-size: 11.5px;
+  white-space: pre-line;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.session-active { background: var(--av-blue-fill); }
+.session-done { background: var(--av-ok-fill); }
+.session-failed { background: var(--av-danger-fill); }
+.session-failed .session-detail { color: var(--av-danger); }
+.session-bar { height: 4px; border-radius: 2px; background: var(--av-border); overflow: hidden; }
+.session-bar-fill { height: 100%; background: var(--av-blue); transition: width 300ms ease; }
+.session-busy .session-title::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--av-blue);
+  animation: av-pulse 1.1s ease-in-out infinite;
+}
+.session-actions { justify-content: flex-end; }
+button.armed { background: var(--av-blue-dark); }
 
 /* ---------- connect sheet ---------- */
 

@@ -17,6 +17,29 @@ export interface PanelOptions {
   /** Full mode only. */
   onApply?(): void;
   onBatchAction?(action: BatchAction, batchId: string): void;
+  onSessionAction?(action: SessionAction): void;
+}
+
+export type SessionAction = 'start' | 'commit' | 'discard' | 'dismiss';
+
+/**
+ * The playground session strip (git.mode "session"). Like BatchView, a view
+ * model: what to say and which buttons to offer, nothing about the sidecar.
+ */
+export interface SessionView {
+  tone: 'idle' | 'busy' | 'active' | 'done' | 'failed';
+  title: string;
+  detail?: string | null;
+  lines?: string[];
+  progress?: { step: number; steps: number } | null;
+  actions: Array<{
+    action: SessionAction;
+    label: string;
+    /** Two-click actions: the label shown while armed. */
+    confirm?: string;
+    primary?: boolean;
+    disabled?: boolean;
+  }>;
 }
 
 export type BatchAction = 'resolve' | 'undo' | 'dismiss' | 'copy';
@@ -52,6 +75,9 @@ let exportBtn: HTMLButtonElement | null = null;
 let applyBtn: HTMLButtonElement | null = null;
 let statusEl: HTMLDivElement | null = null;
 let batchEl: HTMLDivElement | null = null;
+let sessionEl: HTMLDivElement | null = null;
+/** Session mode without an active session: Apply waits for Start session. */
+let applyAllowed = true;
 let clearBtn: HTMLButtonElement | null = null;
 let resolvedBtn: HTMLButtonElement | null = null;
 let teardownDrag: (() => void) | null = null;
@@ -107,6 +133,9 @@ export async function mount(opts: PanelOptions) {
   batchEl = el('div', 'batch');
   batchEl.hidden = true;
   node.appendChild(batchEl);
+  sessionEl = el('div', 'session');
+  sessionEl.hidden = true;
+  node.appendChild(sessionEl);
   statusEl = el('div', 'panel-status');
   statusEl.hidden = true;
   node.appendChild(statusEl);
@@ -267,13 +296,80 @@ function buildItem(record: CommentRecord): HTMLDivElement {
 export function setMode(mode: Mode) {
   if (!applyBtn || !exportBtn) return;
   const full = mode === 'full';
-  applyBtn.hidden = !full;
+  applyBtn.hidden = !full || !applyAllowed;
   exportBtn.classList.toggle('primary', !full);
   exportBtn.classList.toggle('ghost', full);
   if (!full) {
     if (statusEl) statusEl.hidden = true;
     if (batchEl) batchEl.hidden = true;
+    if (sessionEl) sessionEl.hidden = true;
   }
+}
+
+/** Hides Apply while a playground has no active session; Start session sits in the strip. */
+export function setApplyAllowed(allowed: boolean) {
+  applyAllowed = allowed;
+  if (applyBtn && exportBtn) {
+    const full = exportBtn.classList.contains('ghost');
+    applyBtn.hidden = !full || !allowed;
+  }
+}
+
+let armed: { action: SessionAction; timer: number } | null = null;
+
+export function setSession(view: SessionView | null) {
+  if (!sessionEl) return;
+  sessionEl.textContent = '';
+  sessionEl.hidden = !view;
+  if (!view) return;
+  sessionEl.className = `session session-${view.tone}`;
+
+  const head = el('div', 'session-head');
+  head.appendChild(el('span', 'session-title', view.title));
+  if (view.actions.some((a) => a.action === 'dismiss')) {
+    const close = el('button', 'item-act batch-close', '✕');
+    close.title = 'Dismiss';
+    close.addEventListener('click', () => options?.onSessionAction?.('dismiss'));
+    head.appendChild(close);
+  }
+  sessionEl.appendChild(head);
+  if (view.detail) sessionEl.appendChild(el('div', 'session-detail', view.detail));
+  if (view.progress && view.progress.steps > 0) {
+    const bar = el('div', 'session-bar');
+    const fill = el('div', 'session-bar-fill');
+    fill.style.width = `${Math.round((view.progress.step / view.progress.steps) * 100)}%`;
+    bar.appendChild(fill);
+    sessionEl.appendChild(bar);
+  }
+  if (view.lines?.length) sessionEl.appendChild(el('div', 'session-lines', view.lines.join('\n')));
+
+  const buttons = view.actions.filter((a) => a.action !== 'dismiss');
+  if (!buttons.length) return;
+  const row = el('div', 'row session-actions');
+  for (const spec of buttons) {
+    const isArmed = armed?.action === spec.action;
+    const btn = el(
+      'button',
+      [spec.primary ? 'primary' : 'ghost', isArmed ? (spec.primary ? 'armed' : 'danger-armed') : ''].join(' ').trim(),
+      isArmed && spec.confirm ? spec.confirm : spec.label,
+    );
+    btn.disabled = !!spec.disabled;
+    btn.addEventListener('click', () => {
+      // Commit and Discard are not undoable from here, so they take two clicks,
+      // the same way Clear all does.
+      if (spec.confirm && armed?.action !== spec.action) {
+        if (armed) clearTimeout(armed.timer);
+        armed = { action: spec.action, timer: window.setTimeout(() => { armed = null; setSession(view); }, 4000) };
+        setSession(view);
+        return;
+      }
+      if (armed) clearTimeout(armed.timer);
+      armed = null;
+      options?.onSessionAction?.(spec.action);
+    });
+    row.appendChild(btn);
+  }
+  sessionEl.appendChild(row);
 }
 
 export function setStatuses(next: Map<string, Phase>) {
@@ -371,6 +467,7 @@ export function destroy() {
   applyBtn = null;
   statusEl = null;
   batchEl = null;
+  sessionEl = null;
   clearBtn = null;
   options = null;
 }

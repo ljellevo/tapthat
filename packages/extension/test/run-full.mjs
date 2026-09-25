@@ -107,18 +107,26 @@ function makeChrome() {
   return chrome;
 }
 
-async function boot(url) {
+const HEALTH = {
+  status: 'ok', version: 't', repo: { branch: 'dev', head: 'abc1234', clean: true },
+  repos: [{ name: 'app', branch: 'dev', head: 'abc1234', clean: true }],
+  devServer: { reachable: true, url: 'http://localhost:5173' }, devServers: [],
+  queue: { depth: 0, running: false }, agent: { cliVersion: '1', envCredential: true }, killSwitch: false,
+  mode: 'commit', session: null,
+};
+
+/** `respond(path, method, body)` scripts the sidecar; the default is a healthy one in commit mode. */
+async function boot(url, respond = () => HEALTH) {
   const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url });
   const { window } = dom;
   const requests = [];
   window.chrome = makeChrome();
-  window.fetch = async (input) => {
+  window.fetch = async (input, init = {}) => {
     requests.push(String(input));
-    return new Response(JSON.stringify({
-      status: 'ok', version: 't', repo: { branch: 'dev', head: 'abc1234', clean: true },
-      devServer: { reachable: true, url: 'http://localhost:5173' }, queue: { depth: 0, running: false },
-      agent: { cliVersion: '1', envCredential: true }, killSwitch: false,
-    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const path = new URL(String(input)).pathname;
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    const answer = respond(path, init.method ?? 'GET', body);
+    return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   window.EventSource = class { constructor(u) { requests.push(`EventSource ${u}`); } close() {} };
   window.crypto.randomUUID ??= () => `id-${Math.random().toString(16).slice(2)}`;
@@ -201,6 +209,62 @@ async function boot(url) {
   await new Promise((r) => setTimeout(r, 100));
   check('off-allowlist: Apply stays hidden', button('Apply to dev')?.hidden === true);
   check('off-allowlist: still zero network requests', requests.length === 0, requests.join(', '));
+  window.close();
+}
+
+// ── A playground (git.mode "session") ────────────────────────────────────────
+{
+  const sidecar = { session: null, calls: [] };
+  const pending = [{ batchId: 'b1', at: new Date().toISOString(), summary: 'Added stage', files: ['api/src/x.ts'],
+    comments: ['Show the deal stage'], pageUrl: 'http://localhost:3000/pricing', reviewer: 'Ana' }];
+  const respond = (path, method, body) => {
+    if (method === 'POST') sidecar.calls.push(`${method} ${path} ${JSON.stringify(body ?? {})}`);
+    if (path === '/healthz') return { ...HEALTH, mode: 'session', session: sidecar.session && { id: 's1', state: sidecar.session.state, pending: 1 } };
+    if (path === '/api/session/start') {
+      sidecar.session = { id: 's1', state: 'active', startedAt: 'x', startedBy: 'Ana', branch: 'tapthat/session-s1', base: [], pending, events: [],
+        repos: [{ name: 'app', files: ['src/p.tsx'] }, { name: 'api', files: ['src/x.ts', 'src/y.ts'] }], error: null };
+    }
+    if (path === '/api/session/commit') {
+      sidecar.session = null;
+      return { id: 's1', outcome: 'committed', at: new Date().toISOString(), by: 'Ana', commits: [{ repo: 'api', sha: 'a1b2c3d' }, { repo: 'app', sha: 'd4e5f6a' }], notices: ['api/shared/contracts changed. admin keep their own copy: sync it there too.'] };
+    }
+    if (path.startsWith('/api/session')) {
+      return { mode: 'session', session: sidecar.session, last: sidecar.session ? null
+        : { id: 's1', outcome: 'committed', at: new Date().toISOString(), by: 'Ana', commits: [{ repo: 'api', sha: 'a1b2c3d' }, { repo: 'app', sha: 'd4e5f6a' }], notices: ['api/shared/contracts changed. admin keep their own copy: sync it there too.'] } };
+    }
+    return HEALTH;
+  };
+  const { window, button, root } = await boot('http://localhost:3000/pricing', respond);
+  await window.chrome.storage.local.set({
+    'av:settings': { sidecarUrl: 'http://localhost:7420', token: 't', credential: null, allowedOrigins: ['http://localhost:3000'], reviewerName: 'Ana' },
+  });
+  window.chrome._send({ type: 'TOGGLE' });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  await settle();
+  const strip = () => root()?.querySelector('.session');
+  check('playground: with no session, the strip offers Start session', !!button('Start session') && strip()?.hidden === false);
+  check('playground: Apply waits for a session', button('Apply to dev')?.hidden === true);
+
+  button('Start session').click();
+  await settle();
+  check('Start session posts with the reviewer\'s name',
+    sidecar.calls.some((c) => c.startsWith('POST /api/session/start') && c.includes('"reviewer":"Ana"')), sidecar.calls.join(' | '));
+  check('an active session lists its pending changes',
+    strip()?.textContent.includes('1 change ready for dev') && strip()?.textContent.includes('Show the deal stage — Ana'), strip()?.textContent);
+  check('it names the repos and counts the files', strip()?.textContent.includes('app, api · 3 files'), strip()?.textContent);
+  check('Apply is available during a session', button('Apply to dev')?.hidden === false);
+
+  button('Commit to dev').click();
+  await settle();
+  check('Commit to dev asks for a second click first',
+    !!button('Send 1 change to dev?') && !sidecar.calls.some((c) => c.includes('/api/session/commit')));
+  button('Send 1 change to dev?').click();
+  await settle();
+  check('the second click sends it', sidecar.calls.some((c) => c.startsWith('POST /api/session/commit')));
+  check('after Commit the strip says what reached dev, per repo',
+    strip()?.textContent.includes('Sent to dev') && strip()?.textContent.includes('api a1b2c3d · app d4e5f6a'), strip()?.textContent);
+  check('…and relays notices for a human', strip()?.textContent.includes('sync it there too'));
+  check('…and offers the next Start session', !!button('Start session'));
   window.close();
 }
 

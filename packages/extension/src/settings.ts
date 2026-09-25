@@ -14,6 +14,8 @@ export interface Settings {
   token: string | null;
   credential: Pick<CredentialInfo, 'handle' | 'fingerprint' | 'kind'> | null;
   allowedOrigins: string[];
+  /** Shown to teammates next to the changes you applied. Optional, free text. */
+  reviewerName: string | null;
 }
 
 const KEY = 'av:settings';
@@ -23,6 +25,7 @@ export const DEFAULTS: Settings = {
   token: null,
   credential: null,
   allowedOrigins: [],
+  reviewerName: null,
 };
 
 function normalize(raw: Partial<Settings> | undefined): Settings {

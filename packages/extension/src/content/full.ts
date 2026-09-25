@@ -1,4 +1,4 @@
-import type { BatchRequest, Health } from '@tapthat/shared';
+import type { BatchRequest, Health, SessionResponse } from '@tapthat/shared';
 import * as settingsStore from '../settings';
 import type { Settings } from '../settings';
 import { createClient, SidecarError, type Client } from '../sidecar/client';
@@ -19,7 +19,7 @@ import * as store from './store';
 import * as connect from './ui/connect';
 import { toast } from './ui/host';
 import * as panel from './ui/panel';
-import type { BatchAction, BatchView } from './ui/panel';
+import type { BatchAction, BatchView, SessionAction, SessionView } from './ui/panel';
 
 /**
  * TapThat Full, in the page: Apply, live status, undo. Everything here is
@@ -37,6 +37,11 @@ let healthError: string | null = null;
 let trouble = false;
 let submitting = false;
 let healthTimer: number | undefined;
+/** Session mode only: the playground session, and the last Commit or Discard. */
+let session: SessionResponse | null = null;
+let sessionTimer: number | undefined;
+let sessionBusy: SessionAction | null = null;
+let dismissedOutcome: string | null = null;
 const watchers = new Map<string, () => void>();
 const modeListeners = new Set<(mode: Mode) => void>();
 
@@ -48,9 +53,23 @@ export function onModeChange(fn: (mode: Mode) => void): void {
   modeListeners.add(fn);
 }
 
+/**
+ * Where the workspace stands: one head, or `app:a1b2,api:c3d4` across several
+ * repos — a change to any of them can change what the reviewer is looking at.
+ */
+function workspaceKey(h: Health | null): string | undefined {
+  if (!h) return undefined;
+  if ((h.repos?.length ?? 0) > 1) return h.repos.map((r) => `${r.name}:${r.head ?? '?'}`).join(',');
+  return h.repo.head ?? undefined;
+}
+
 /** Stamped on comments made in Full mode, so the panel can warn when the branch moves under them. */
 export function baseShaForNewComment(): string | undefined {
-  return mode === 'full' ? (health?.repo.head ?? undefined) : undefined;
+  return mode === 'full' ? workspaceKey(health) : undefined;
+}
+
+function sessionMode(): boolean {
+  return health?.mode === 'session';
 }
 
 function applySettings(next: Settings) {
@@ -114,6 +133,66 @@ async function refreshHealth(): Promise<void> {
     healthError = err instanceof SidecarError ? err.message : String(err);
   }
   render();
+  if (sessionMode()) await refreshSession();
+}
+
+const SESSION_BUSY = new Set(['starting', 'committing', 'discarding']);
+
+/** Polls quickly while a session step runs, so its progress is visible. */
+async function refreshSession(): Promise<void> {
+  if (!client) return;
+  clearTimeout(sessionTimer);
+  try {
+    session = await client.session();
+  } catch {
+    // The status line already reports an unreachable sidecar.
+  }
+  render();
+  if (session?.session && SESSION_BUSY.has(session.session.state)) {
+    sessionTimer = window.setTimeout(() => void refreshSession(), 1500);
+  }
+}
+
+// ── session actions ──────────────────────────────────────────────────────────
+
+export async function sessionAction(action: SessionAction): Promise<void> {
+  if (!client) return;
+  if (action === 'dismiss') {
+    dismissedOutcome = session?.last?.id ?? null;
+    render();
+    return;
+  }
+  if (sessionBusy) return;
+  sessionBusy = action;
+  render();
+  const who = settings.reviewerName;
+  try {
+    if (action === 'start') {
+      session = await client.startSession(who);
+      toast('Starting a session — copying the latest from dev');
+    } else if (action === 'commit') {
+      const outcome = await client.commitSession(who);
+      toast(`Sent to dev: ${outcome.commits.map((c) => c.repo).join(', ')}`);
+      await retireSessionBatches();
+    } else {
+      await client.discardSession(who);
+      toast('Session discarded — code and data are back to dev');
+      await retireSessionBatches();
+    }
+  } catch (err) {
+    toast(err instanceof SidecarError ? err.message : `Failed: ${String(err)}`);
+  } finally {
+    sessionBusy = null;
+    await refreshSession();
+    void refreshHealth();
+  }
+}
+
+/** After Commit or Discard the session branch is gone, so its batches can no longer be undone. */
+async function retireSessionBatches(): Promise<void> {
+  for (const b of batches.list()) {
+    if (!b.dismissed && isFinished(b)) await batches.put({ ...b, dismissed: true });
+  }
 }
 
 // ── apply ────────────────────────────────────────────────────────────────────
@@ -144,6 +223,7 @@ export async function apply(): Promise<void> {
       page: pageContext(),
       comments: records.map(({ stale: _stale, ...rest }) => rest),
       client: { name: 'tapthat-extension', version: chrome.runtime.getManifest().version },
+      reviewer: settings.reviewerName ?? undefined,
     };
 
     let accepted;
@@ -180,6 +260,9 @@ function submitError(err: unknown): string {
       return "Can't reach the sidecar — Export still works";
     case 'unauthorized':
       return 'The sidecar rejected the token — check the extension settings';
+    case 'no_session':
+      return 'Start a session first — it copies the latest from dev';
+    case 'session_busy':
     case 'rate_limited':
     case 'kill_switch':
     case 'page_not_allowed':
@@ -347,7 +430,10 @@ function viewOf(batch: TrackedBatch): BatchView {
       };
     case 'committed':
       return {
-        batchId: batch.batchId, phase, title: `Committed ${sha}${push}`,
+        batchId: batch.batchId, phase,
+        title: sessionMode()
+          ? `Applied in this session${commitsLabel(batch)}`
+          : `Committed ${(batch.commits ?? []).length > 1 ? commitsLabel(batch).slice(3) : sha}${push}`,
         summary: batch.summary, files: batch.filesChanged,
         actions: [...(resolvable ? (['resolve'] as const) : []), 'undo', 'dismiss'],
         resolveCount: resolvable,
@@ -371,13 +457,103 @@ function viewOf(batch: TrackedBatch): BatchView {
   }
 }
 
+/** ` · api a1b2c3d · app 9f8e7d6` for a batch that committed in several repos. */
+function commitsLabel(batch: TrackedBatch): string {
+  const commits = batch.commits ?? [];
+  if (commits.length < 2) return '';
+  return ` · ${commits.map((c) => `${c.repo} ${c.sha.slice(0, 7)}`).join(' · ')}`;
+}
+
+function sessionView(): SessionView | null {
+  if (!sessionMode()) return null;
+  const s = session?.session ?? null;
+  const last = session?.last ?? null;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  if (!s) {
+    const recent = last && last.id !== dismissedOutcome && Date.now() - Date.parse(last.at) < 30 * 60_000;
+    const start = { action: 'start' as const, label: sessionBusy === 'start' ? 'Starting…' : 'Start session', primary: true, disabled: !!sessionBusy };
+    if (recent && last.outcome === 'committed') {
+      return {
+        tone: 'done',
+        title: 'Sent to dev',
+        detail: `${last.commits.map((c) => `${c.repo} ${c.sha}`).join(' · ')}${last.by ? ` · by ${last.by}` : ''}. The dev environment deploys it from here.`,
+        lines: last.notices.map((n) => `⚠ ${n}`),
+        actions: [start, { action: 'dismiss', label: 'Dismiss' }],
+      };
+    }
+    if (recent && last.outcome === 'discarded') {
+      return {
+        tone: 'idle',
+        title: 'Session discarded',
+        detail: 'The code and data are back to dev.',
+        actions: [start, { action: 'dismiss', label: 'Dismiss' }],
+      };
+    }
+    return {
+      tone: 'idle',
+      title: 'No session',
+      detail: 'Start a session to apply changes here. It copies the latest code and data from dev into this playground, which takes a few minutes.',
+      actions: [start],
+    };
+  }
+
+  const lastEvent = s.events.at(-1);
+  if (SESSION_BUSY.has(s.state)) {
+    const titles: Record<string, string> = { starting: 'Starting a session…', committing: 'Sending to dev…', discarding: 'Discarding…' };
+    return {
+      tone: 'busy',
+      title: titles[s.state]!,
+      detail: `${lastEvent?.message ?? ''}${s.startedBy && s.state === 'starting' ? ` · started by ${s.startedBy}` : ''}`,
+      progress: lastEvent?.steps ? { step: lastEvent.step ?? 0, steps: lastEvent.steps } : null,
+      actions: [],
+    };
+  }
+
+  if (s.state === 'failed') {
+    return {
+      tone: 'failed',
+      title: 'The session failed',
+      detail: s.error ?? 'Unknown error.',
+      actions: [{ action: 'discard', label: 'Discard', confirm: 'Discard it?', disabled: !!sessionBusy }],
+    };
+  }
+
+  const files = s.repos.reduce((n, r) => n + r.files.length, 0);
+  const n = s.pending.length;
+  return {
+    tone: 'active',
+    title: n ? `Session · ${plural(n, 'change')} ready for dev` : 'Session · no changes yet',
+    detail: [
+      n ? `${s.repos.map((r) => r.name).join(', ')} · ${plural(files, 'file')}` : 'Apply comments; they stay here until you send them.',
+      s.startedBy ? `started by ${s.startedBy}` : null,
+    ].filter(Boolean).join(' · '),
+    lines: s.pending.map((p) => `• ${(p.comments[0] ?? p.summary).split('\n')[0]}${p.reviewer ? ` — ${p.reviewer}` : ''}`),
+    actions: [
+      {
+        action: 'discard',
+        label: sessionBusy === 'discard' ? 'Discarding…' : 'Discard all',
+        confirm: 'Discard all, data too?',
+        disabled: !!sessionBusy,
+      },
+      {
+        action: 'commit',
+        label: sessionBusy === 'commit' ? 'Sending…' : 'Commit to dev',
+        confirm: `Send ${plural(n, 'change')} to dev?`,
+        primary: true,
+        disabled: !!sessionBusy || n === 0,
+      },
+    ],
+  };
+}
+
 function statusLine(): { text: string | null; tone: 'info' | 'warn' | 'error' } {
   if (trouble) return { text: 'Lost contact with the sidecar — retrying…', tone: 'error' };
   if (healthError) return { text: 'Sidecar unreachable — Export still works', tone: 'error' };
   if (!health) return { text: null, tone: 'info' };
   if (health.killSwitch) return { text: 'Paused by the operator — Export still works', tone: 'warn' };
 
-  const head = health.repo.head;
+  const head = workspaceKey(health);
   // Comments captured against an older HEAD may describe an element that has
   // since changed. The only honest answer with two reviewers on one tree.
   const settled = new Set(
@@ -386,7 +562,11 @@ function statusLine(): { text: string | null; tone: 'info' | 'warn' | 'error' } 
   const drifted = store.open().some((c) => c.baseSha && head && c.baseSha !== head && !settled.has(c.id));
   if (drifted) return { text: 'The page changed since you commented — re-check before applying', tone: 'warn' };
 
-  let text = `${health.repo.branch ?? '?'} @ ${head ?? '?'}`;
+  const branchLabel = (b: string | null) => (b?.startsWith('tapthat/session-') ? 'session' : (b ?? '?'));
+  let text =
+    (health.repos?.length ?? 0) > 1
+      ? health.repos.map((r) => `${r.name} ${branchLabel(r.branch)}@${r.head ?? '?'}`).join(' · ')
+      : `${branchLabel(health.repo.branch)} @ ${health.repo.head ?? '?'}`;
   const mine = batches.list().some((b) => !isFinished(b));
   if (health.queue.depth > 0 && !mine) text += ` · ${health.queue.depth} job${health.queue.depth === 1 ? '' : 's'} ahead`;
   if (!health.devServer.reachable) return { text: `${text} · dev server not responding`, tone: 'warn' };
@@ -406,4 +586,7 @@ export function render(): void {
   const line = statusLine();
   panel.setStatusLine(line.text, line.tone);
   panel.setApplyBusy(submitting || list.some((b) => !isFinished(b)));
+  panel.setSession(sessionView());
+  // In a playground, Apply waits for Start session.
+  panel.setApplyAllowed(!sessionMode() || session?.session?.state === 'active');
 }

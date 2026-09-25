@@ -90,6 +90,7 @@
       <a href="#key">Getting a Claude key</a>
       <a href="#setup">Setting it up</a>
       <a href="#use">Using it</a>
+      <a href="#playground">Playground sessions</a>
       <a href="#safe">Safety &amp; cost</a>
       <a href="#trouble">Something's wrong</a>
     </nav>
@@ -207,6 +208,27 @@
       </ul>
       <div class="note">Changes are made on the <strong>test site only</strong>. The real website your
         customers use doesn't change until your developers review and publish them.</div>
+    </section>
+
+    <section id="playground">
+      <h2>Playground sessions</h2>
+      <p>Some teams run TapThat in its own <strong>playground</strong>: a separate copy of the test site where
+        you can try changes freely before anyone else sees them. You'll know you're in one when the TapThat panel
+        shows a <strong>Start session</strong> button.</p>
+      <ol>
+        <li><strong>Start session.</strong> This copies the latest version of the test site into the playground,
+          its data included, so you start from what everyone else sees. It takes a few minutes; the panel shows
+          how far along it is.</li>
+        <li><strong>Comment and apply</strong> as usual. Every change appears in the playground only. Teammates
+          in the same playground see your changes, and you see theirs.</li>
+        <li>When you're happy, press <strong>Commit to dev</strong> (twice, to confirm). Everything from the
+          session is sent to the team's test site, and it updates there a few minutes later.</li>
+        <li>Not happy? <strong>Discard all</strong> throws the session away, including any data you changed
+          while testing, and the playground goes back to how the test site looks.</li>
+      </ol>
+      <div class="note">Nothing reaches the test site until someone presses <strong>Commit to dev</strong>, and
+        nothing reaches the real website until your developers publish it. If Commit says someone else changed the
+        same thing in the meantime, nothing was sent. Ask a developer to combine the two.</div>
     </section>
 
     <section id="safe">

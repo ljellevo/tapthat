@@ -9,6 +9,8 @@ import {
   type CredentialInfo,
   type Health,
   type RevertAccepted,
+  type SessionOutcome,
+  type SessionResponse,
   type SidecarInfo,
 } from '@tapthat/shared';
 
@@ -192,6 +194,10 @@ export function createClient(opts: ClientOptions) {
     submit: (request: BatchRequest) => call<BatchAccepted>('POST', '/api/batches', request),
     get: (batchId: string) => call<BatchStatus>('GET', `/api/batches/${enc(batchId)}`),
     revert: (batchId: string) => call<RevertAccepted>('POST', `/api/batches/${enc(batchId)}/revert`),
+    session: () => call<SessionResponse>('GET', '/api/session'),
+    startSession: (reviewer: string | null) => call<SessionResponse>('POST', '/api/session/start', { reviewer: reviewer ?? undefined }),
+    commitSession: (reviewer: string | null) => call<SessionOutcome>('POST', '/api/session/commit', { reviewer: reviewer ?? undefined }),
+    discardSession: (reviewer: string | null) => call<SessionOutcome>('POST', '/api/session/discard', { reviewer: reviewer ?? undefined }),
     watch,
   };
 }

@@ -1,4 +1,4 @@
-import { isTerminal, type BatchAccepted, type BatchEvent, type BatchState, type BatchStatus } from '@tapthat/shared';
+import { isTerminal, type BatchAccepted, type BatchEvent, type BatchState, type BatchStatus, type RepoCommit } from '@tapthat/shared';
 
 /**
  * A batch as the extension tracks it. Ephemeral run state, deliberately kept
@@ -21,6 +21,8 @@ export interface TrackedBatch {
   filesChanged: string[];
   summary: string | null;
   sha: string | null;
+  /** One per repository in a multi-repo workspace. */
+  commits: RepoCommit[];
   pushed: 'yes' | 'failed' | null;
   error: { kind: string; message: string } | null;
   /** Compiler output from verifyCommand, when the build broke. */
@@ -46,6 +48,7 @@ export function track(accepted: BatchAccepted, commentIds: string[]): TrackedBat
     filesChanged: [],
     summary: null,
     sha: null,
+    commits: [],
     pushed: null,
     error: null,
     verifyOutput: null,
@@ -74,6 +77,7 @@ export function applyEvent(batch: TrackedBatch, event: BatchEvent): TrackedBatch
     case 'committed':
       next.state = 'committed';
       next.sha = event.sha ?? null;
+      next.commits = event.commits ?? (event.sha ? [{ repo: '', sha: event.sha }] : []);
       break;
     case 'pushed':
       next.pushed = 'yes';
@@ -101,6 +105,7 @@ export function applyStatus(batch: TrackedBatch, status: BatchStatus): TrackedBa
     summary: status.result?.summary || next.summary,
     filesChanged: status.result?.filesChanged.length ? status.result.filesChanged : next.filesChanged,
     sha: status.result?.sha ?? next.sha,
+    commits: status.result?.commits ?? next.commits ?? [],
     error: status.error,
     verifyOutput: status.state === 'applied-unverified' ? (next.verifyOutput ?? status.error?.message ?? null) : next.verifyOutput,
   };

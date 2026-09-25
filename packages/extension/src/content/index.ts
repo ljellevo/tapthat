@@ -50,6 +50,7 @@ async function ensureMounted() {
     },
     onApply: () => void full.apply(),
     onBatchAction: (action, batchId) => void full.batchAction(action, batchId),
+    onSessionAction: (action) => void full.sessionAction(action),
   });
   full.render();
 
