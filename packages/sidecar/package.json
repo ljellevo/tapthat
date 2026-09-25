@@ -1,7 +1,7 @@
 {
   "name": "@tapthat/sidecar",
   "version": "0.1.0",
-  "description": "Applies TapThat comments to a repo with a coding agent, beside your dev server. Development tool — never run it in production.",
+  "description": "Applies TapThat comments to a repo with a coding agent, beside your dev server. Development tool \u2014 never run it in production.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -16,7 +16,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node test/run-safety.mjs",
+    "test": "node test/run-safety.mjs && node test/run-http.mjs",
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

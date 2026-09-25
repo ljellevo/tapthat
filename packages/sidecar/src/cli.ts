@@ -2,6 +2,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { makeAgentRunner, credentialKind } from './agent';
 import { loadConfig, CONFIG_FILENAME } from './config';
+import { deriveKey } from './credentials';
+import { startDevServer, waitForDevServer } from './dev-server';
+import { detectPlatform } from './guard';
+import { createHttpServer } from './http';
+import { Store } from './store';
 import { sequencer } from './events';
 import { assertNotProduction } from './guard';
 import { runJob, type BatchRequest } from './job';
@@ -10,10 +15,13 @@ import { makeVerifier } from './verify';
 
 const USAGE = `tapthat-sidecar — apply TapThat comments to this repo with a coding agent
 
+  tapthat-sidecar serve                   start the HTTP API (default)
   tapthat-sidecar run-file <batch.json>   run one batch from a file (no HTTP)
   tapthat-sidecar doctor                  check config, repo and agent CLI
 
 Development tool only. Requires TAPTHAT_ENABLE=1.`;
+
+const VERSION = '0.1.0';
 
 function credentialFromEnv() {
   const raw = process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -31,22 +39,12 @@ async function cmdRunFile(path: string): Promise<number> {
     return 78;
   }
 
+  const failure = await preflight(config);
+  if (failure) {
+    console.error(failure);
+    return 78;
+  }
   const repo = new Repo(config.repoRoot);
-  if (!(await repo.isGitWorktree())) {
-    console.error(`${config.repoRoot} is not a git working tree.`);
-    return 78;
-  }
-
-  // An agent editing a branch nobody is looking at is the worst silent failure
-  // in this system, so a mismatch is fatal rather than a warning.
-  const checkedOut = await repo.branch();
-  if (checkedOut !== config.branch) {
-    console.error(
-      `Branch mismatch: ${CONFIG_FILENAME} targets "${config.branch}" but ${config.repoRoot} has "${checkedOut}" checked out.\n` +
-        `Check out "${config.branch}", or set TAPTHAT_BRANCH=${checkedOut}.`,
-    );
-    return 78;
-  }
 
   const batch = JSON.parse(await readFile(resolve(cwd, path), 'utf8')) as BatchRequest;
   const emit = sequencer((event) => {
@@ -84,6 +82,108 @@ async function cmdRunFile(path: string): Promise<number> {
   return result.state === 'failed' ? 1 : 0;
 }
 
+/** Boot checks shared by serve and run-file. Returns null when everything holds. */
+async function preflight(config: Awaited<ReturnType<typeof loadConfig>>['config']): Promise<string | null> {
+  const repo = new Repo(config.repoRoot);
+  const worktreeProblem = await repo.worktreeProblem();
+  if (worktreeProblem) return worktreeProblem;
+
+  // An agent editing a branch nobody is looking at is the worst silent failure
+  // in this system, so a mismatch is fatal rather than a warning.
+  const checkedOut = await repo.branch();
+  if (checkedOut !== config.branch) {
+    return (
+      `Branch mismatch: ${CONFIG_FILENAME} targets "${config.branch}" but ${config.repoRoot} has "${checkedOut}" checked out.\n` +
+      `Check out "${config.branch}", or set TAPTHAT_BRANCH=${checkedOut}.`
+    );
+  }
+  return null;
+}
+
+async function cmdServe(): Promise<number> {
+  const cwd = process.cwd();
+  const { config, problems, source } = await loadConfig(cwd);
+  if (problems.length) {
+    console.error(`Configuration problems${source ? ` in ${source}` : ''}:`);
+    for (const p of problems) console.error(`  - ${p}`);
+    return 78;
+  }
+
+  const failure = await preflight(config);
+  if (failure) {
+    console.error(failure);
+    return 78;
+  }
+
+  const token = process.env.TAPTHAT_TOKEN ?? null;
+  if (config.auth.mode === 'token' && !token) {
+    console.error(
+      'TAPTHAT_TOKEN is not set.\n\n' +
+        'This endpoint accepts instructions that modify your repository, so it will not\n' +
+        'start unauthenticated. Generate one with `openssl rand -base64 32`, or set\n' +
+        'auth.mode to "none" (permitted only when bound to loopback).',
+    );
+    return 78;
+  }
+
+  const repo = new Repo(config.repoRoot);
+  const store = await Store.open(Store.defaultPath(config.repoRoot));
+  const encryptionKey = deriveKey(process.env.TAPTHAT_ENCRYPTION_KEY);
+  if (!encryptionKey) {
+    console.warn('[tapthat] TAPTHAT_ENCRYPTION_KEY is not set — credentials cannot be stored.');
+  }
+
+  let dev: ReturnType<typeof startDevServer> | null = null;
+  if (config.devServer.start && config.devServer.command) {
+    console.log(`[tapthat] starting dev server: ${config.devServer.command}`);
+    dev = startDevServer(config.devServer.command, config.repoRoot);
+    const ready = await waitForDevServer(config.devServerUrl, config.devServer.readyTimeoutMs);
+    if (!ready) console.warn(`[tapthat] dev server did not answer at ${config.devServerUrl} yet; continuing`);
+  }
+
+  const server = createHttpServer({
+    config,
+    repo,
+    store,
+    encryptionKey,
+    token,
+    envCredential: credentialFromEnv(),
+    version: VERSION,
+  });
+
+  await new Promise<void>((resolve) => server.listen(config.port, config.host, resolve));
+
+  const platform = detectPlatform(process.env);
+  console.log('');
+  console.log(`  TapThat sidecar ready on http://${config.host}:${config.port}`);
+  console.log(`  repo    ${config.repoRoot} @ ${config.branch} (${await repo.head()})`);
+  console.log(`  agent   ${config.agent.command} [${config.agent.allowedTools}]`);
+  console.log(`  proxy   ${config.proxy.enabled ? `on → ${config.proxy.target ?? config.devServerUrl}` : 'off'}`);
+  console.log(`  origins ${config.allowedOrigins.join(', ') || '(none — Apply will be refused)'}`);
+  console.log('');
+  console.log('  Paste into the extension options page:');
+  console.log(`    Sidecar URL  http://${config.host}:${config.port}`);
+  console.log(`    Token        ${token ?? '(auth disabled)'}`);
+  if (platform && config.git.push) {
+    console.log('');
+    console.log(`  ⚠ ${platform} redeploys on push. git.push is enabled, so every applied`);
+    console.log('    batch will restart this service and interrupt the reviewer mid-session.');
+  }
+  console.log('');
+
+  const shutdown = () => {
+    dev?.stop();
+    server.close(() => {
+      void store.flush().then(() => process.exit(0));
+    });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  await new Promise(() => {});
+  return 0;
+}
+
 async function cmdDoctor(): Promise<number> {
   const { config, problems, source } = await loadConfig(process.cwd());
   console.log(`config: ${source ?? 'defaults (no tapthat.config.json found)'}`);
@@ -91,8 +191,9 @@ async function cmdDoctor(): Promise<number> {
   console.log(`branch: ${config.branch}`);
 
   const repo = new Repo(config.repoRoot);
-  if (!(await repo.isGitWorktree())) {
-    console.error('  ✗ not a git working tree');
+  const worktreeProblem = await repo.worktreeProblem();
+  if (worktreeProblem) {
+    console.error(`  ✗ ${worktreeProblem}`);
     return 1;
   }
   console.log(`  head:     ${await repo.head()}`);
@@ -107,14 +208,16 @@ async function cmdDoctor(): Promise<number> {
 async function main(): Promise<number> {
   const [command, ...rest] = process.argv.slice(2);
 
-  if (!command || command === '--help' || command === '-h') {
+  if (command === '--help' || command === '-h') {
     console.log(USAGE);
-    return command ? 0 : 1;
+    return 0;
   }
 
   assertNotProduction();
 
-  switch (command) {
+  switch (command ?? 'serve') {
+    case 'serve':
+      return cmdServe();
     case 'run-file': {
       if (!rest[0]) {
         console.error('run-file needs a path to a batch JSON file.');

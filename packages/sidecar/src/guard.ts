@@ -9,15 +9,38 @@ const EX_CONFIG = 78;
 
 export class GuardError extends Error {}
 
+/** Best-effort host detection, used only to make error messages actionable. */
+export function detectPlatform(env: NodeJS.ProcessEnv): string | null {
+  if (env.RAILWAY_ENVIRONMENT || env.RAILWAY_PROJECT_ID || env.RAILWAY_SERVICE_ID) return 'Railway';
+  if (env.FLY_APP_NAME) return 'Fly.io';
+  if (env.RENDER) return 'Render';
+  if (env.VERCEL) return 'Vercel';
+  if (env.HEROKU_APP_ID || env.DYNO) return 'Heroku';
+  return null;
+}
+
 export function checkNotProduction(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.NODE_ENV === 'production') {
-    return [
+    const lines = [
       'Refusing to start: NODE_ENV=production.',
       '',
       'The TapThat sidecar runs a coding agent against your working tree. It is a',
       'development tool and must never run in a production environment. There is no',
       'flag that overrides this check.',
-    ].join('\n');
+    ];
+
+    // Several PaaS builders set NODE_ENV=production for Node services by default,
+    // so on those hosts this fires on the very first deploy and looks like a bug
+    // rather than the guard doing its job. Name the fix rather than making them
+    // guess that the platform, not their config, set it.
+    if (detectPlatform(env)) {
+      lines.push(
+        '',
+        `${detectPlatform(env)} sets NODE_ENV=production by default for Node services.`,
+        'If this really is a dev environment, set NODE_ENV=development on the service.',
+      );
+    }
+    return lines.join('\n');
   }
 
   if (env.TAPTHAT_ENABLE !== '1') {

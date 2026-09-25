@@ -25,6 +25,16 @@ export interface Config {
   };
   verifyCommand: string | null;
   killSwitch: boolean;
+  auth: { mode: 'token' | 'none' };
+  /**
+   * Front the dev server so the whole thing is reachable on one port. Needed on
+   * hosts that expose a single HTTP port per service; off by default because on
+   * Compose and npx the dev server already has its own.
+   */
+  proxy: { enabled: boolean; target: string | null };
+  /** Let the sidecar own the dev server's lifecycle (standalone/PaaS shape). */
+  devServer: { start: boolean; command: string | null; readyTimeoutMs: number };
+  limits: { batchesPerHour: number };
 }
 
 export const CONFIG_FILENAME = 'tapthat.config.json';
@@ -54,6 +64,10 @@ export function defaults(cwd: string): Config {
     },
     verifyCommand: null,
     killSwitch: false,
+    auth: { mode: 'token' },
+    proxy: { enabled: false, target: null },
+    devServer: { start: false, command: null, readyTimeoutMs: 120_000 },
+    limits: { batchesPerHour: 30 },
   };
 }
 
@@ -101,9 +115,14 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
     ...fromFile,
     agent: { ...base.agent, ...fromFile.agent },
     git: { ...base.git, ...fromFile.git, author: { ...base.git.author, ...fromFile.git?.author } },
+    auth: { ...base.auth, ...fromFile.auth },
+    proxy: { ...base.proxy, ...fromFile.proxy },
+    devServer: { ...base.devServer, ...fromFile.devServer },
+    limits: { ...base.limits, ...fromFile.limits },
   };
 
-  config.port = num(env.TAPTHAT_PORT, config.port, problems, 'TAPTHAT_PORT');
+  // PORT is injected by every PaaS; honour it so a container needs no extra wiring.
+  config.port = num(env.TAPTHAT_PORT ?? env.PORT, config.port, problems, 'TAPTHAT_PORT');
   if (env.TAPTHAT_HOST) config.host = env.TAPTHAT_HOST;
   if (env.TAPTHAT_BRANCH) config.branch = env.TAPTHAT_BRANCH;
   if (env.TAPTHAT_DEV_SERVER) config.devServerUrl = env.TAPTHAT_DEV_SERVER;
@@ -113,6 +132,10 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
   }
   if (env.TAPTHAT_VERIFY_COMMAND) config.verifyCommand = env.TAPTHAT_VERIFY_COMMAND;
   if (env.TAPTHAT_KILL_SWITCH === '1') config.killSwitch = true;
+  if (env.TAPTHAT_PROXY === '1') config.proxy.enabled = true;
+  if (env.TAPTHAT_START_DEV_SERVER === '1') config.devServer.start = true;
+  if (env.TAPTHAT_DEV_COMMAND) config.devServer.command = env.TAPTHAT_DEV_COMMAND;
+  if (env.TAPTHAT_AUTH_MODE === 'none') config.auth.mode = 'none';
 
   config.repoRoot = isAbsolute(config.repoRoot) ? config.repoRoot : resolve(cwd, config.repoRoot);
 
@@ -134,6 +157,17 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
   }
   if (config.agent.timeoutMs < 1000) {
     problems.push(`agent.timeoutMs: ${config.agent.timeoutMs} is too short to be useful`);
+  }
+  if (config.devServer.start && !config.devServer.command) {
+    problems.push('devServer.command: required when devServer.start is true (TAPTHAT_DEV_COMMAND)');
+  }
+  // Unauthenticated + reachable off-box is a repo-write primitive for anyone who
+  // finds the port, so the two settings are only allowed to disagree on loopback.
+  if (config.auth.mode === 'none' && config.host !== '127.0.0.1' && config.host !== 'localhost') {
+    problems.push(
+      `auth.mode "none" is only allowed when host is loopback, but host is "${config.host}". ` +
+        'This endpoint accepts instructions that modify your repository.',
+    );
   }
 
   return { config, problems, source };

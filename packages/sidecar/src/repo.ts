@@ -37,12 +37,28 @@ export class Repo {
     return (await this.gitRaw(...args)).trim();
   }
 
-  async isGitWorktree(): Promise<boolean> {
+  /**
+   * Returns null when this is a usable worktree, or the reason it is not.
+   *
+   * Distinguishing "not a repo" from "git could not read it" matters: a
+   * permissions or ownership problem reported as "not a git working tree" sends
+   * you looking in entirely the wrong place.
+   */
+  async worktreeProblem(): Promise<string | null> {
     try {
-      return (await this.git('rev-parse', '--is-inside-work-tree')) === 'true';
-    } catch {
-      return false;
+      const inside = await this.git('rev-parse', '--is-inside-work-tree');
+      return inside === 'true' ? null : `${this.root} is not a git working tree.`;
+    } catch (err) {
+      const stderr = String((err as { stderr?: string }).stderr ?? '').trim();
+      if (/not a git repository/i.test(stderr)) {
+        return `${this.root} is not a git working tree.`;
+      }
+      return `Could not read the git repository at ${this.root}:\n  ${stderr || String(err)}`;
     }
+  }
+
+  async isGitWorktree(): Promise<boolean> {
+    return (await this.worktreeProblem()) === null;
   }
 
   async head(): Promise<string> {
