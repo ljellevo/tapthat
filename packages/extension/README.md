@@ -46,7 +46,7 @@ comments straight to an agent running beside your dev server, so the change appe
 the page within seconds. It's the same extension — configuring a sidecar URL in the
 options page is the entire difference.
 
-See the project page for setup: https://github.com/ludellevold/tapthat
+See the project page for setup: https://github.com/ljellevo/tapthat
 
 ## License
 

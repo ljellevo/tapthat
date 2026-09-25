@@ -88,9 +88,7 @@ the resolved list, where ↩ reopens a comment and ✕ deletes it for good.
 
 ## Install — Full
 
-> **Status: not yet shipped.** The sidecar is in development. This section is the target
-> shape of the install; the commands below won't work until `@tapthat/sidecar` is
-> published. Light works today.
+**Step-by-step instructions for both halves are in [INSTALL.md](INSTALL.md).** In short:
 
 > ⚠️ **The sidecar must never run in production.** It accepts instructions that modify
 > your repository, and it is a development tool only. See [docs/security.md](docs/security.md)
@@ -98,66 +96,43 @@ the resolved list, where ↩ reopens a comment and ✕ deletes it for good.
 
 Full adds a **sidecar**: a small process that runs beside your dev server, in the same
 working tree. When a reviewer hits Apply, the sidecar runs an agent over your repo, your
-dev server's HMR pushes the change to their browser, and the edit is committed in the
-background.
+dev server's HMR pushes the change to their browser, and the edit is committed.
 
 ```
 Chrome extension ──POST──▶ sidecar ──claude -p──▶ edits files
                                           ├─▶ HMR pushes to the browser   (~15-45s)
-                                          └─▶ git commit + push (async)
+                                          └─▶ git commit (+ push, optional)
 ```
 
-### 1. Run the sidecar
-
-In the repo you want edited, beside your dev server:
+**1. Run the sidecar.** In the repo you want edited, on the branch the agent should
+commit to:
 
 ```bash
 npm i -D @tapthat/sidecar          # devDependency only, never a production dep
-npx tapthat-sidecar init           # writes tapthat.config.json, prints what to paste
-npx tapthat-sidecar                # run it
+npx tapthat-sidecar init           # writes tapthat.config.json + secrets, prints what to paste
+TAPTHAT_ENABLE=1 npx tapthat-sidecar
 ```
 
-`init` generates an auth token and an encryption key, and prints the exact values for the
-next step. For Docker Compose and hosted dev environments, see [docs/setup.md](docs/setup.md).
+For Docker Compose and hosted dev environments such as Railway, see
+[docs/setup.md](docs/setup.md).
 
-### 2. Point the extension at it
+**2. Point the extension at it.** In the extension's options page, paste the **Sidecar
+URL** and **token** that the sidecar printed, then **Save & test**. The allowed sites fill
+in from the sidecar. Paste your Claude credential once: it is sent to the sidecar, stored
+there encrypted, and never kept in the browser.
 
-Open the extension's options page and set:
+An **Apply to dev** button appears next to Export on your dev site. Export keeps working
+as the fallback whenever the sidecar is down.
 
-- **Sidecar URL** and **token** — both printed by `init`
-- **Allowed origins** — your dev site's origin. The extension only offers Apply on
-  allowlisted origins; this is a security boundary, not a convenience feature.
-- **Your Claude credential** — paste it once. It is sent to the sidecar, stored there, and
-  never returned to the browser; afterwards you only ever see the last four characters.
-  Each user supplies their own, so token cost and rate limits land on their own account.
+**3. Verify.** `curl http://localhost:7420/healthz` should say `"status":"ok"`. Then
+comment "make this text red" on the dev site, press Apply, and confirm **in order**:
 
-An **Apply to dev** button appears next to Export. Export keeps working — it's the
-fallback whenever the sidecar is down.
+1. The panel moves through queued → editing → live → committed.
+2. The browser updates without a manual refresh.
+3. `git log` on the branch shows a new commit.
 
-### 3. Verify
-
-```bash
-curl http://localhost:7420/healthz
-```
-
-```json
-{
-  "status": "ok",
-  "repo": { "branch": "dev", "head": "a1b2c3d", "clean": true },
-  "devServer": { "reachable": true, "url": "http://localhost:5173" },
-  "queue": { "depth": 0, "running": false }
-}
-```
-
-Then the end-to-end check: open the dev site, select an element, submit a trivial comment
-("make this text red"), and confirm three things **in order** —
-
-1. The status moves through queued → editing → live
-2. The browser updates without a manual refresh
-3. `git log` on the branch shows a new commit
-
-If step 2 fails but step 3 succeeds, the shared volume mount or the file watcher is the
-problem, not the agent.
+If step 2 fails but step 3 succeeds, the shared working tree or the file watcher is the
+problem, not the agent. See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ---
 
@@ -202,9 +177,12 @@ npm workspaces monorepo — run everything from the repo root:
 ```bash
 npm run dev       # watching build of the extension
 npm run check     # typecheck + tests + production build, across workspaces
-npm test          # selector, class-name and export-filtering checks
+npm test          # every test suite, in every workspace
 npm run package   # build packages/extension/tapthat.zip
 ```
+
+The sidecar's suites run a fake agent (`packages/sidecar/test/fake-agent.mjs`) against real
+git repositories, so the whole Apply lifecycle is tested without an API key.
 
 | Package | What it is |
 | --- | --- |
@@ -228,7 +206,12 @@ builder.
 
 ### Releasing
 
-Releases are automatic. Every push to `main` that touches the extension builds, tests,
+**The sidecar** is released by pushing a tag: `git tag sidecar-v0.2.0 && git push origin
+sidecar-v0.2.0` publishes `@tapthat/sidecar` to npm (needs the `NPM_TOKEN` secret) and
+`ghcr.io/ljellevo/tapthat-sidecar` to ghcr. Make the ghcr package public once, after the
+first release, so Railway and Compose can pull it without credentials.
+
+**The extension** releases are automatic. Every push to `main` that touches the extension builds, tests,
 packages and publishes a release, bumping the hotfix number (`major.minor.hotfix`) from the
 latest tag — no manual version bump or tag push needed.
 

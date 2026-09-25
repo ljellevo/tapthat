@@ -210,16 +210,26 @@ export class Repo {
     return new Repo(dest, token);
   }
 
-  async revert(sha: string): Promise<{ ok: true; sha: string } | { ok: false; conflicts: string[] }> {
+  async revert(
+    sha: string,
+    author: { name: string; email: string },
+  ): Promise<{ ok: true; sha: string } | { ok: false; conflicts: string[]; message: string }> {
     try {
-      await this.git('revert', '--no-edit', sha);
+      // The author is passed explicitly, as for commits: a container has no git
+      // identity, and without one the revert commit cannot be created at all.
+      await this.git('-c', `user.name=${author.name}`, '-c', `user.email=${author.email}`, 'revert', '--no-edit', sha);
       return { ok: true, sha: await this.head() };
-    } catch {
+    } catch (err) {
+      // Only unmerged paths are a conflict. Anything else is git refusing for its
+      // own reason, and saying "conflict" then sends people looking for one.
+      const unmerged = (await this.git('diff', '--name-only', '--diff-filter=U').catch(() => ''))
+        .split('\n')
+        .filter(Boolean);
       // A conflicted revert leaves the tree mid-operation; abort so the next job
       // starts from a clean state rather than inheriting the conflict.
-      const { dirty } = await this.status();
       await this.git('revert', '--abort').catch(() => {});
-      return { ok: false, conflicts: dirty };
+      const message = String((err as { stderr?: string }).stderr ?? err).trim();
+      return { ok: false, conflicts: unmerged, message };
     }
   }
 }

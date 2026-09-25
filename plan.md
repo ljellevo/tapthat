@@ -1,5 +1,21 @@
 # Plan: Browser-comment → agent → live dev environment
 
+> **Status (2026-09-25): built, as TapThat Full.** This is the original design brief. What
+> shipped differs in these places. Each is recorded where it was decided:
+>
+> - Names: `@yourorg/comment-agent` → `@tapthat/sidecar`, `COMMENT_AGENT_*` → `TAPTHAT_*`.
+> - State is a JSON file, not SQLite ([ADR 0002](docs/adr/0002-json-store.md)).
+> - The source-map plugin (Phase 0) is deferred; the extension's capture payload carries
+>   the load instead.
+> - A single-container shape (Railway) exists alongside Compose: the sidecar starts the dev
+>   server, clones on boot, and fronts everything on one port under `/__tapthat`
+>   ([ADR 0003](docs/adr/0003-proxy-prefix.md)).
+> - Failure recovery restores only the paths the agent touched; there is no
+>   `git reset --hard` (see docs/security.md, R1).
+> - The `repository_dispatch` CI fallback was dropped; Export covers "sidecar down".
+>
+> Install: [INSTALL.md](INSTALL.md). Reference: [docs/setup.md](docs/setup.md).
+
 ## Goal
 
 Extend an existing Chrome extension (select DOM element → attach comment) so that

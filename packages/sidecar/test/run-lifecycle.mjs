@@ -125,6 +125,15 @@ async function startServer(work, overrides = {}) {
 // ── Submit → SSE → commit → push ─────────────────────────────────────────────
 {
   const { bare, work } = makeRemoteAndClone('happy');
+  // A container has no git identity. Commits and reverts must not depend on one
+  // (this is how an undo that only failed in Docker was found).
+  const savedGit = { g: process.env.GIT_CONFIG_GLOBAL, s: process.env.GIT_CONFIG_NOSYSTEM };
+  // useConfigOnly: refuse to invent an identity from the hostname, as git does
+  // in a container whose hostname has no domain.
+  const noIdentity = join(scratch, 'no-identity.gitconfig');
+  writeFileSync(noIdentity, '[user]\n\tuseConfigOnly = true\n');
+  process.env.GIT_CONFIG_GLOBAL = noIdentity;
+  process.env.GIT_CONFIG_NOSYSTEM = '1';
   process.env.FAKE_AGENT_EDIT = 'app.js::1::2';
   const { server, url, call, auditPath } = await startServer(work);
 
@@ -176,6 +185,8 @@ async function startServer(work, overrides = {}) {
   check('status is reverted with a reverted event', status.state === 'reverted' && status.events.at(-1).type === 'reverted');
   const again = await call('/api/batches/b-happy/revert', { method: 'POST' });
   check('a second undo is refused', again.status === 409);
+  if (savedGit.g === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = savedGit.g;
+  if (savedGit.s === undefined) delete process.env.GIT_CONFIG_NOSYSTEM; else process.env.GIT_CONFIG_NOSYSTEM = savedGit.s;
 
   server.close();
   await new Promise((r) => setTimeout(r, 100));

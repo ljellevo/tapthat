@@ -36,9 +36,20 @@ export interface BatchResult {
   baseSha?: string;
 }
 
+/** A subject line of at most 72 characters, cut on a word boundary. */
+function subjectLine(summary: string): string {
+  const first = summary.split('\n')[0]!.trim();
+  if (first.length <= 72) return first || 'Apply TapThat feedback';
+  const cut = first.slice(0, 71);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 40 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 function commitMessage(batch: BatchRequest, summary: string): string {
-  const subject = summary.split('\n')[0]!.trim().slice(0, 72) || 'Apply TapThat feedback';
-  return `${subject}\n\nTapThat batch ${batch.batchId}\nPage: ${batch.page.url}`;
+  const subject = subjectLine(summary);
+  // The full summary goes in the body when the subject had to be shortened.
+  const body = subject.endsWith('…') ? `${summary.trim()}\n\n` : '';
+  return `${subject}\n\n${body}TapThat batch ${batch.batchId}\nPage: ${batch.page.url}`;
 }
 
 /**

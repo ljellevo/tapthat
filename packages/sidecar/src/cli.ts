@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { appendFile, chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
@@ -150,6 +150,31 @@ async function probeAgent(command: string): Promise<string | null> {
   }
 }
 
+/**
+ * Runs the install command unless the lockfile is unchanged since the last
+ * successful install. A PaaS restarts the container often, and a full `npm ci`
+ * on every boot turns a restart into minutes of downtime for the reviewer.
+ */
+async function installIfNeeded(config: Config): Promise<boolean> {
+  const command = config.devServer.install!;
+  const hash = createHash('sha256').update(command);
+  for (const file of ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'package.json']) {
+    hash.update(await readFile(join(config.repoRoot, file)).catch(() => Buffer.alloc(0)));
+  }
+  const digest = hash.digest('hex');
+  const marker = join(Store.defaultDir(config.repoRoot), 'install.sha256');
+  const installed = existsSync(join(config.repoRoot, 'node_modules'));
+  if (installed && (await readFile(marker, 'utf8').catch(() => '')) === digest) {
+    console.log('[tapthat] dependencies unchanged since the last install; skipping it');
+    return true;
+  }
+  console.log(`[tapthat] installing: ${command}`);
+  if ((await runShell(command, config.repoRoot)) !== 0) return false;
+  await mkdir(Store.defaultDir(config.repoRoot), { recursive: true });
+  await writeFile(marker, digest);
+  return true;
+}
+
 function runShell(command: string, cwd: string): Promise<number> {
   return new Promise((done) => {
     const child = spawn(command, { cwd, shell: true, stdio: 'inherit' });
@@ -262,13 +287,9 @@ async function cmdServe(): Promise<number> {
     );
   }
 
-  if (config.devServer.install) {
-    console.log(`[tapthat] installing: ${config.devServer.install}`);
-    const code = await runShell(config.devServer.install, config.repoRoot);
-    if (code !== 0) {
-      console.error(`[tapthat] "${config.devServer.install}" exited with ${code}; the dev server cannot start without it.`);
-      return 1;
-    }
+  if (config.devServer.install && !(await installIfNeeded(config))) {
+    console.error(`[tapthat] "${config.devServer.install}" failed; the dev server cannot start without it.`);
+    return 1;
   }
 
   let dev: ReturnType<typeof startDevServer> | null = null;

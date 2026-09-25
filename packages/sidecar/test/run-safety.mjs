@@ -231,7 +231,8 @@ const events = () => {
   git(dir, 'add', '-A'); git(dir, 'commit', '-q', '-m', 'change');
   const target = git(dir, 'rev-parse', '--short', 'HEAD');
 
-  const ok = await repo.revert(target);
+  const AUTHOR = { name: 'TapThat', email: 'tapthat@localhost' };
+  const ok = await repo.revert(target, AUTHOR);
   check('R5 clean revert succeeds', ok.ok === true);
   check('R5 revert restores the previous content',
     readFileSync(join(dir, 'app.js'), 'utf8') === 'export const heading = "Hello";\n');
@@ -239,8 +240,9 @@ const events = () => {
   // Manufacture a conflict: change the same line, then revert the older commit.
   writeFileSync(join(dir, 'app.js'), 'export const heading = "Conflicting";\n');
   git(dir, 'add', '-A'); git(dir, 'commit', '-q', '-m', 'conflict');
-  const conflicted = await repo.revert(target);
+  const conflicted = await repo.revert(target, AUTHOR);
   check('R5 conflicting revert reports failure', conflicted.ok === false);
+  check('R5 a real conflict names the conflicting path', conflicted.conflicts?.includes('app.js'), JSON.stringify(conflicted));
   check('R5 conflicting revert leaves the tree clean (no half-applied revert)',
     git(dir, 'status', '--porcelain') === '', `status: ${git(dir, 'status', '--porcelain')}`);
   rmSync(dir, { recursive: true, force: true });

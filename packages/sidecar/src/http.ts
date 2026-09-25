@@ -523,7 +523,7 @@ export function createHttpServer(deps: ServerDeps): Server {
     // slot as a job rather than racing one.
     const outcome = await queue.run(config.branch, async () => {
       if (!(await repo.isClean())) return { kind: 'dirty' as const };
-      const reverted = await repo.revert(sha);
+      const reverted = await repo.revert(sha, config.git.author);
       if (reverted.ok && config.git.push) {
         await repo.push(config.git.remote, config.branch).catch(() => {});
       }
@@ -535,9 +535,12 @@ export function createHttpServer(deps: ServerDeps): Server {
       return;
     }
     if (!outcome.reverted.ok) {
+      const conflicted = outcome.reverted.conflicts.length > 0;
       json(res, 409, {
-        error: 'conflict',
-        message: 'A later change touched the same lines, so this batch cannot be undone on its own.',
+        error: conflicted ? 'conflict' : 'revert_failed',
+        message: conflicted
+          ? 'A later change touched the same lines, so this batch cannot be undone on its own.'
+          : `git could not revert this batch: ${outcome.reverted.message}`,
         conflicts: outcome.reverted.conflicts,
       });
       return;
