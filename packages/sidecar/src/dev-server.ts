@@ -6,16 +6,27 @@ import { spawn, type ChildProcess } from 'node:child_process';
  * talk to. Dev servers die; a sidecar whose dev server is gone looks healthy and
  * applies changes nobody can see.
  */
-export function startDevServer(command: string, cwd: string): { child: ChildProcess; stop(): void } {
+export function startDevServer(
+  command: string,
+  cwd: string,
+  devServerUrl: string,
+): { child: ChildProcess; stop(): void } {
+  // The platform's PORT belongs to the sidecar. Most dev scripts read PORT
+  // (`next dev --port ${PORT:-3000}`), so passing it through would put the dev
+  // server on the sidecar's port and leave devServerUrl pointing at nothing.
+  const port = new URL(devServerUrl).port;
+  const env = { ...process.env, PORT: port || undefined };
+  const launch = () => spawn(command, { cwd, shell: true, stdio: 'inherit', env });
+
   let stopped = false;
-  let child = spawn(command, { cwd, shell: true, stdio: 'inherit' });
+  let child = launch();
 
   const onExit = (code: number | null) => {
     if (stopped) return;
     console.error(`[tapthat] dev server exited (${code}); restarting in 2s`);
     setTimeout(() => {
       if (stopped) return;
-      child = spawn(command, { cwd, shell: true, stdio: 'inherit' });
+      child = launch();
       child.on('exit', onExit);
     }, 2000);
   };

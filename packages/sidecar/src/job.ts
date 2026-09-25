@@ -1,15 +1,9 @@
 import { buildMarkdown } from '@tapthat/shared';
-import type { CommentRecord, PageContext } from '@tapthat/shared';
+import type { BatchRequest } from '@tapthat/shared';
 import type { BatchEvent, BatchState, Emit } from './events';
 import { Repo } from './repo';
 
-export interface BatchRequest {
-  batchId: string;
-  credentialHandle: string | null;
-  page: PageContext;
-  comments: CommentRecord[];
-  client?: { name: string; version: string };
-}
+export type { BatchRequest };
 
 export interface AgentResult {
   ok: boolean;

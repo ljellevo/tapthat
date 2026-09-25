@@ -20,6 +20,31 @@ export function createProxy(target: string) {
   const targetHost = url.hostname;
   const targetPort = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
 
+  /**
+   * Host is rewritten to the dev server's own, because dev servers reject hosts
+   * they don't recognise (Vite's allowedHosts); the public one travels on in
+   * X-Forwarded-Host, where frameworks look for it.
+   */
+  function forwardHeaders(req: IncomingMessage, upgrade: boolean): IncomingMessage['headers'] {
+    const headers: IncomingMessage['headers'] = { ...req.headers, host: url.host };
+    const publicHost = req.headers['x-forwarded-host'] ?? req.headers.host;
+    if (publicHost) headers['x-forwarded-host'] = publicHost;
+
+    // Dev servers accept HMR websockets only from their own origin (Next 16
+    // answers anything else with 403). Behind this proxy the page's origin is the
+    // public domain, so a same-origin upgrade is presented as the dev server's
+    // own. A genuinely foreign Origin is passed through untouched and still
+    // refused.
+    if (upgrade && req.headers.origin && publicHost) {
+      try {
+        if (new URL(req.headers.origin).host === String(publicHost)) headers.origin = url.origin;
+      } catch {
+        /* malformed Origin: forward as-is and let the dev server refuse it */
+      }
+    }
+    return headers;
+  }
+
   function web(req: IncomingMessage, res: ServerResponse): void {
     const upstream = request(
       {
@@ -27,7 +52,7 @@ export function createProxy(target: string) {
         port: targetPort,
         method: req.method,
         path: req.url,
-        headers: { ...req.headers, host: url.host },
+        headers: forwardHeaders(req, false),
       },
       (upstreamRes) => {
         res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
@@ -56,7 +81,7 @@ export function createProxy(target: string) {
    */
   function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
     const upstream = connect(targetPort, targetHost, () => {
-      const headers = Object.entries(req.headers)
+      const headers = Object.entries(forwardHeaders(req, true))
         .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
         .join('\r\n');
       upstream.write(`${req.method} ${req.url} HTTP/1.1\r\n${headers}\r\n\r\n`);

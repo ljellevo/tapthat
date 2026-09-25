@@ -9,3 +9,4 @@ export { deriveKey, issue, resolve as resolveCredential } from './credentials';
 export { Queue } from './queue';
 export { loadConfig, defaults } from './config';
 export { createProxy } from './proxy';
+export { startDevServer } from './dev-server';

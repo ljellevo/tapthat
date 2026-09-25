@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { CredentialInfo } from '@tapthat/shared';
 import { credentialKind, type Credential } from './agent';
 import type { Store, StoredCredential } from './store';
 
@@ -39,11 +40,8 @@ function unseal(sealed: string, key: Buffer): string {
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
 }
 
-export interface CredentialInfo {
-  handle: string;
-  fingerprint: string;
-  kind: Credential['kind'];
-}
+/** Validation is reported by the HTTP layer, which knows whether it ran. */
+export type IssuedCredential = Omit<CredentialInfo, 'validated'>;
 
 export function fingerprint(raw: string): string {
   return raw.slice(-4);
@@ -54,7 +52,7 @@ export function fingerprint(raw: string): string {
  * back to the browser — chrome.storage.local is inspectable, so the extension
  * holds only the handle and a four-character fingerprint.
  */
-export function issue(raw: string, key: Buffer | null, store: Store): CredentialInfo {
+export function issue(raw: string, key: Buffer | null, store: Store): IssuedCredential {
   const trimmed = raw.trim();
   const kind = credentialKind(trimmed);
   if (!kind) {

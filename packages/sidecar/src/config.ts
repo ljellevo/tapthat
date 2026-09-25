@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
+import { detectPlatform } from './guard';
 
 export interface Config {
   port: number;
@@ -124,6 +125,10 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
   // PORT is injected by every PaaS; honour it so a container needs no extra wiring.
   config.port = num(env.TAPTHAT_PORT ?? env.PORT, config.port, problems, 'TAPTHAT_PORT');
   if (env.TAPTHAT_HOST) config.host = env.TAPTHAT_HOST;
+  // On a PaaS the platform's edge is the only client, and it cannot reach
+  // loopback — the default would deploy a service that never passes a health
+  // check. `::` is dual-stack, which private networks like Railway's need.
+  else if (!fromFile.host && detectPlatform(env)) config.host = '::';
   if (env.TAPTHAT_BRANCH) config.branch = env.TAPTHAT_BRANCH;
   if (env.TAPTHAT_DEV_SERVER) config.devServerUrl = env.TAPTHAT_DEV_SERVER;
   if (env.TAPTHAT_REPO_ROOT) config.repoRoot = env.TAPTHAT_REPO_ROOT;
@@ -153,6 +158,21 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
       }
     } catch {
       problems.push(`allowedOrigins: "${origin}" is not a valid origin (override with TAPTHAT_ALLOWED_ORIGINS)`);
+    }
+  }
+  if (config.proxy.enabled || config.devServer.start) {
+    try {
+      const dev = new URL(config.proxy.target ?? config.devServerUrl);
+      const devPort = Number(dev.port || (dev.protocol === 'https:' ? 443 : 80));
+      const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(dev.hostname);
+      if (loopback && devPort === config.port) {
+        problems.push(
+          `devServerUrl: ${dev.origin} is the sidecar's own port (${config.port}). ` +
+            'Give the dev server a different port, e.g. TAPTHAT_DEV_SERVER=http://localhost:3001',
+        );
+      }
+    } catch {
+      problems.push(`devServerUrl: "${config.devServerUrl}" is not a valid URL (override with TAPTHAT_DEV_SERVER)`);
     }
   }
   if (config.agent.timeoutMs < 1000) {

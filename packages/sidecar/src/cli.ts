@@ -5,7 +5,7 @@ import { loadConfig, CONFIG_FILENAME } from './config';
 import { deriveKey } from './credentials';
 import { startDevServer, waitForDevServer } from './dev-server';
 import { detectPlatform } from './guard';
-import { createHttpServer } from './http';
+import { createHttpServer, ROUTE_PREFIX } from './http';
 import { Store } from './store';
 import { sequencer } from './events';
 import { assertNotProduction } from './guard';
@@ -136,7 +136,7 @@ async function cmdServe(): Promise<number> {
   let dev: ReturnType<typeof startDevServer> | null = null;
   if (config.devServer.start && config.devServer.command) {
     console.log(`[tapthat] starting dev server: ${config.devServer.command}`);
-    dev = startDevServer(config.devServer.command, config.repoRoot);
+    dev = startDevServer(config.devServer.command, config.repoRoot, config.devServerUrl);
     const ready = await waitForDevServer(config.devServerUrl, config.devServer.readyTimeoutMs);
     if (!ready) console.warn(`[tapthat] dev server did not answer at ${config.devServerUrl} yet; continuing`);
   }
@@ -154,15 +154,21 @@ async function cmdServe(): Promise<number> {
   await new Promise<void>((resolve) => server.listen(config.port, config.host, resolve));
 
   const platform = detectPlatform(process.env);
+  const listenHost = config.host === '::' || config.host === '0.0.0.0' ? 'localhost' : config.host;
+  const publicBase = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://${listenHost}:${config.port}`;
+  // In proxy mode the app owns the path space, so only the prefix reaches us.
+  const sidecarUrl = config.proxy.enabled ? `${publicBase}${ROUTE_PREFIX}` : publicBase;
   console.log('');
-  console.log(`  TapThat sidecar ready on http://${config.host}:${config.port}`);
+  console.log(`  TapThat sidecar ready on ${config.host}:${config.port}`);
   console.log(`  repo    ${config.repoRoot} @ ${config.branch} (${await repo.head()})`);
   console.log(`  agent   ${config.agent.command} [${config.agent.allowedTools}]`);
   console.log(`  proxy   ${config.proxy.enabled ? `on → ${config.proxy.target ?? config.devServerUrl}` : 'off'}`);
   console.log(`  origins ${config.allowedOrigins.join(', ') || '(none — Apply will be refused)'}`);
   console.log('');
   console.log('  Paste into the extension options page:');
-  console.log(`    Sidecar URL  http://${config.host}:${config.port}`);
+  console.log(`    Sidecar URL  ${sidecarUrl}`);
   console.log(`    Token        ${token ?? '(auth disabled)'}`);
   if (platform && config.git.push) {
     console.log('');

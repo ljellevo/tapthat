@@ -8,7 +8,8 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { connect } from 'node:net';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +26,7 @@ const bundle = await esbuild.build({
 const modDir = mkdtempSync(join(tmpdir(), 'tapthat-mod-'));
 const modPath = join(modDir, 'mod.mjs');
 writeFileSync(modPath, bundle.outputFiles[0].text);
-const { createHttpServer, Store, Repo, defaults, deriveKey, Queue } = await import(modPath);
+const { createHttpServer, Store, Repo, defaults, deriveKey, Queue, loadConfig, startDevServer } = await import(modPath);
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -180,11 +181,19 @@ const body = (id, url = `${ORIGIN}/`) => JSON.stringify({
 
 server.close();
 
-// ── Proxy mode: one port serves both the API and the dev server ──────────────
+// ── Proxy mode: one port serves both the app and the sidecar ────────────────
 {
+  const seen = [];
   const upstream = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(`<html>dev server: ${req.url}</html>`);
+  });
+  // Stands in for a dev server's HMR socket: answers 101 only to its own origin,
+  // which is what Next 16 does.
+  upstream.on('upgrade', (req, socket) => {
+    seen.push({ origin: req.headers.origin, host: req.headers.host, fwd: req.headers['x-forwarded-host'] });
+    const own = req.headers.origin === upstreamUrl;
+    socket.end(own ? 'HTTP/1.1 101 Switching Protocols\r\n\r\n' : 'HTTP/1.1 403 Forbidden\r\n\r\n');
   });
   await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
   const upstreamUrl = `http://127.0.0.1:${upstream.address().port}`;
@@ -196,16 +205,76 @@ server.close();
     envCredential: null, version: '0.0.0',
   });
   await new Promise((r) => proxied.listen(0, '127.0.0.1', r));
-  const pbase = `http://127.0.0.1:${proxied.address().port}`;
+  const pport = proxied.address().port;
+  const pbase = `http://127.0.0.1:${pport}`;
 
   const page = await fetch(`${pbase}/some/route`);
   check('proxy forwards page requests to the dev server',
     (await page.text()).includes('dev server: /some/route'));
-  const health = await fetch(`${pbase}/healthz`);
-  check('the sidecar still owns /healthz on the same port',
+  const health = await fetch(`${pbase}/__tapthat/healthz`);
+  check('the sidecar owns /__tapthat/healthz on the same port',
     health.status === 200 && (await health.json()).repo.branch === 'dev');
 
+  // Next.js apps routinely have their own /api/* (dealroom's BFF does). Proxy
+  // mode must not shadow them, or the app breaks the moment the sidecar fronts it.
+  const appApi = await fetch(`${pbase}/api/me`);
+  check("the app's own /api/* is not shadowed in proxy mode",
+    (await appApi.text()).includes('dev server: /api/me'));
+  check('unprefixed /healthz belongs to the app in proxy mode',
+    (await (await fetch(`${pbase}/healthz`)).text()).includes('dev server: /healthz'));
+  const gated = await fetch(`${pbase}/__tapthat/api/batches`, { method: 'POST', body: '{}' });
+  check('prefixed API routes are still gated by the token', gated.status === 401);
+
+  const upgrade = (host, origin) => new Promise((resolveUpgrade) => {
+    const sock = connect(pport, '127.0.0.1', () => sock.write(
+      `GET /_next/hmr HTTP/1.1\r\nHost: ${host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+      `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: ${origin}\r\n\r\n`));
+    sock.once('data', (d) => { resolveUpgrade(d.toString().split('\r\n')[0]); sock.destroy(); });
+    sock.on('error', () => resolveUpgrade('error'));
+  });
+  const PUBLIC = 'dev.up.railway.app';
+  const sameOrigin = await upgrade(PUBLIC, `https://${PUBLIC}`);
+  check('a same-origin HMR upgrade from the public domain reaches the dev server',
+    sameOrigin.includes('101'), sameOrigin);
+  check('the public host travels on in X-Forwarded-Host', seen.at(-1)?.fwd === PUBLIC, JSON.stringify(seen.at(-1)));
+  const foreign = await upgrade(PUBLIC, 'https://evil.example');
+  check('a foreign-origin HMR upgrade is passed through untouched and refused',
+    foreign.includes('403') && seen.at(-1)?.origin === 'https://evil.example', foreign);
+
   proxied.close(); upstream.close();
+}
+
+// ── Single-container PaaS configuration ──────────────────────────────────────
+{
+  const railway = { RAILWAY_ENVIRONMENT: 'dev', PORT: '8080' };
+  const onPaas = await loadConfig(repoDir, railway);
+  check('PORT is honoured', onPaas.config.port === 8080);
+  check('host defaults to dual-stack on a detected PaaS, not loopback', onPaas.config.host === '::');
+  check('an explicit TAPTHAT_HOST still wins',
+    (await loadConfig(repoDir, { ...railway, TAPTHAT_HOST: '0.0.0.0' })).config.host === '0.0.0.0');
+  check('host stays loopback off-platform', (await loadConfig(repoDir, {})).config.host === '127.0.0.1');
+
+  const clash = await loadConfig(repoDir, {
+    ...railway, TAPTHAT_PROXY: '1', TAPTHAT_DEV_SERVER: 'http://localhost:8080',
+  });
+  check("a dev server on the sidecar's own port is a config error",
+    clash.problems.some((p) => p.includes("sidecar's own port")), clash.problems.join('; '));
+
+  // The platform's PORT is the sidecar's. A dev script like
+  // `next dev --port ${PORT:-3000}` must get devServerUrl's port instead, or it
+  // takes the sidecar's port and the sidecar can never bind.
+  const out = join(mkdtempSync(join(tmpdir(), 'dev-port-')), 'port.txt');
+  const prevPort = process.env.PORT;
+  process.env.PORT = '8080';
+  const dev = startDevServer(
+    `node -e "require('fs').writeFileSync(process.argv[1], String(process.env.PORT))" "${out}"`,
+    repoDir, 'http://localhost:3901',
+  );
+  for (let i = 0; i < 50 && !existsSync(out); i++) await new Promise((r) => setTimeout(r, 100));
+  dev.stop();
+  if (prevPort === undefined) delete process.env.PORT; else process.env.PORT = prevPort;
+  const seenPort = existsSync(out) ? readFileSync(out, 'utf8') : '(never ran)';
+  check("the dev server gets devServerUrl's port, not the platform PORT", seenPort === '3901', seenPort);
 }
 
 // ── The queue serializes per branch ──────────────────────────────────────────

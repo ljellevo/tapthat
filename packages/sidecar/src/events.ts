@@ -1,35 +1,6 @@
-export type BatchState =
-  | 'queued'
-  | 'running'
-  | 'applied'
-  | 'applied-unverified'
-  | 'committed'
-  | 'failed'
-  | 'reverted';
+import type { BatchEvent } from '@tapthat/shared';
 
-export type BatchEventType =
-  | 'accepted'
-  | 'queued'
-  | 'started'
-  | 'prompt-rendered'
-  | 'agent-message'
-  | 'files-changed'
-  | 'verify-passed'
-  | 'verify-failed'
-  | 'committed'
-  | 'failed'
-  | 'reverted';
-
-export interface BatchEvent {
-  seq: number;
-  batchId: string;
-  at: string;
-  type: BatchEventType;
-  message?: string;
-  files?: string[];
-  sha?: string;
-  output?: string;
-}
+export type { BatchEvent, BatchEventType, BatchState } from '@tapthat/shared';
 
 export type Emit = (event: Omit<BatchEvent, 'seq' | 'at'>) => void;
 

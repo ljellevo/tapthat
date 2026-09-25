@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { BatchEvent, BatchState } from './events';
+import type { BatchStatus } from '@tapthat/shared';
 
 export interface StoredCredential {
   handle: string;
@@ -11,19 +11,11 @@ export interface StoredCredential {
   createdAt: string;
 }
 
-export interface StoredBatch {
-  batchId: string;
-  state: BatchState;
-  createdAt: string;
-  baseSha: string | null;
-  branch: string;
-  pageUrl: string;
-  commentIds: string[];
-  events: BatchEvent[];
-  eventsToken: string;
-  result: { summary: string; filesChanged: string[]; sha?: string; durationMs: number } | null;
-  error: { kind: string; message: string } | null;
-}
+/**
+ * The wire shape minus the live queue depth, plus the SSE token that must never
+ * be returned by the status endpoint.
+ */
+export type StoredBatch = Omit<BatchStatus, 'queueDepth'> & { eventsToken: string };
 
 interface Shape {
   version: 1;

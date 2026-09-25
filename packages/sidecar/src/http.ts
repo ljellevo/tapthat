@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { BatchAccepted, BatchStatus, CredentialInfo, Health } from '@tapthat/shared';
 import { makeAgentRunner, type Credential } from './agent';
 import type { Config } from './config';
 import { CredentialError, issue, resolve as resolveCredential } from './credentials';
@@ -12,6 +13,22 @@ import type { Store, StoredBatch } from './store';
 import { makeVerifier } from './verify';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Every sidecar route is also served under this prefix, and in proxy mode it is
+ * the only way in. The app behind the proxy owns the rest of the path space —
+ * a Next.js app with its own /api/* routes would otherwise be shadowed by ours.
+ */
+export const ROUTE_PREFIX = '/__tapthat';
+
+/** The sidecar path a request addresses, or null when it belongs to the dev server. */
+export function sidecarPath(pathname: string, proxying: boolean): string | null {
+  if (pathname === ROUTE_PREFIX || pathname.startsWith(`${ROUTE_PREFIX}/`)) {
+    return pathname.slice(ROUTE_PREFIX.length) || '/';
+  }
+  if (proxying) return null;
+  return pathname;
+}
 
 export interface ServerDeps {
   config: Config;
@@ -83,9 +100,7 @@ export function createHttpServer(deps: ServerDeps): Server {
     return presented.length > 0 && safeEqual(presented, deps.token);
   }
 
-  async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
-    const path = url.pathname;
-
+  async function handleApi(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
     if (path === '/healthz' && req.method === 'GET') {
       const status = await repo.status().catch(() => null);
       json(res, 200, {
@@ -99,7 +114,7 @@ export function createHttpServer(deps: ServerDeps): Server {
         devServer: { reachable: await devServerReachable(), url: config.devServerUrl },
         queue: { depth: queue.depth(config.branch), running: queue.isRunning(config.branch) },
         killSwitch: config.killSwitch,
-      });
+      } satisfies Health);
       return;
     }
 
@@ -121,7 +136,7 @@ export function createHttpServer(deps: ServerDeps): Server {
         json(res, 400, { error: 'bad_request', message: 'Expected { credential: "sk-ant-…" }.' });
         return;
       }
-      json(res, 200, { ...issue(body.credential, deps.encryptionKey, store), validated: false });
+      json(res, 200, { ...issue(body.credential, deps.encryptionKey, store), validated: false } satisfies CredentialInfo);
       return;
     }
 
@@ -145,7 +160,7 @@ export function createHttpServer(deps: ServerDeps): Server {
         return;
       }
       const { eventsToken: _omit, ...safe } = batch;
-      json(res, 200, { ...safe, queueDepth: queue.depth(config.branch) });
+      json(res, 200, { ...safe, queueDepth: queue.depth(config.branch) } satisfies BatchStatus);
       return;
     }
 
@@ -238,7 +253,7 @@ export function createHttpServer(deps: ServerDeps): Server {
       baseSha: record.baseSha,
       branch: record.branch,
       eventsToken: record.eventsToken,
-    });
+    } satisfies BatchAccepted);
 
     // Runs after the response: the extension polls for progress.
     void runQueued(batch, record, credential);
@@ -333,10 +348,10 @@ export function createHttpServer(deps: ServerDeps): Server {
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    const ours = url.pathname === '/healthz' || url.pathname.startsWith('/api/');
+    const path = sidecarPath(url.pathname, !!proxy);
 
-    if (!ours && proxy) {
-      proxy.web(req, res);
+    if (path === null) {
+      proxy!.web(req, res);
       return;
     }
 
@@ -346,7 +361,7 @@ export function createHttpServer(deps: ServerDeps): Server {
       return;
     }
 
-    handleApi(req, res, url).catch((err) => {
+    handleApi(req, res, path).catch((err) => {
       const status = err instanceof CredentialError ? err.status : 500;
       const message = err instanceof Error ? err.message : String(err);
       if (status === 500) console.error(`[tapthat] ${message}`);
