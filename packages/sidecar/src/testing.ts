@@ -10,3 +10,5 @@ export { Queue } from './queue';
 export { loadConfig, defaults } from './config';
 export { createProxy } from './proxy';
 export { startDevServer } from './dev-server';
+export { createAudit } from './audit';
+export { seal, unseal } from './credentials';

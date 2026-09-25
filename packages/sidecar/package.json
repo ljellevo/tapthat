@@ -16,7 +16,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node test/run-safety.mjs && node test/run-http.mjs",
+    "test": "node test/run-safety.mjs && node test/run-http.mjs && node test/run-lifecycle.mjs",
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {

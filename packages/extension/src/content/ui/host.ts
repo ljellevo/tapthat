@@ -306,6 +306,120 @@ button:disabled:hover { background: transparent; }
   border-top: 1px solid var(--av-border);
 }
 
+/* ---------- full mode ---------- */
+
+.pill {
+  display: inline-block;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 999px;
+  margin-right: 5px;
+  vertical-align: 1px;
+  background: var(--av-hover);
+  color: var(--av-muted);
+}
+.pill-editing, .pill-queued { background: var(--av-blue-fill); color: var(--av-blue); }
+.pill-live, .pill-committed { background: var(--av-ok-fill); color: var(--av-ok); }
+/* Applied but the build is broken: amber, distinct from success and from failure. */
+.pill-unverified { background: var(--av-warn-fill); color: var(--av-warn); }
+.pill-failed { background: var(--av-danger-fill); color: var(--av-danger); }
+
+.batch {
+  border-top: 1px solid var(--av-border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.batch[hidden] { display: none; }
+.batch-head { display: flex; align-items: center; gap: 4px; }
+.batch-title { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; }
+.batch-close { opacity: 1; }
+.batch-progress { font-size: 11.5px; color: var(--av-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.batch-editing .batch-progress::before, .batch-queued .batch-progress::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--av-blue);
+  animation: av-pulse 1.1s ease-in-out infinite;
+}
+@keyframes av-pulse { 50% { opacity: 0.25; } }
+.batch-summary { font-size: 12px; white-space: pre-line; }
+.batch-files {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--av-muted);
+  white-space: pre-line;
+}
+.batch-output {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: var(--av-hover);
+  user-select: text;
+}
+.batch-actions { justify-content: flex-end; }
+
+.panel-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--av-border);
+  color: var(--av-muted);
+}
+.panel-status[hidden] { display: none; }
+.panel-status.tone-warn { color: var(--av-warn); background: var(--av-warn-fill); }
+.panel-status.tone-error { color: var(--av-danger); background: var(--av-danger-fill); }
+
+/* ---------- connect sheet ---------- */
+
+.sheet {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: var(--av-surface);
+  border: 1px solid var(--av-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.3);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sheet h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.sheet p { margin: 0; font-size: 12px; color: var(--av-muted); }
+.sheet input {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 8px;
+  border: 1px solid var(--av-border);
+  border-radius: 6px;
+  background: var(--av-input);
+  color: var(--av-text);
+  outline: none;
+}
+.sheet input:focus { border-color: var(--av-blue); box-shadow: 0 0 0 3px var(--av-blue-fill); }
+.sheet .error { color: var(--av-danger); font-size: 12px; }
+.sheet a { color: var(--av-blue); font-size: 12px; cursor: pointer; }
+
 /* ---------- toast ---------- */
 
 .toast {
@@ -341,6 +455,10 @@ const TOKENS_LIGHT = `
   --av-muted: #64748b;
   --av-danger: #dc2626;
   --av-danger-fill: rgba(220, 38, 38, 0.1);
+  --av-ok: #15803d;
+  --av-ok-fill: rgba(22, 163, 74, 0.12);
+  --av-warn: #b45309;
+  --av-warn-fill: rgba(217, 119, 6, 0.12);
   --av-toast: #0f172a;
 `;
 
@@ -357,6 +475,10 @@ const TOKENS_DARK = `
   --av-muted: #94a3b8;
   --av-danger: #f87171;
   --av-danger-fill: rgba(248, 113, 113, 0.14);
+  --av-ok: #4ade80;
+  --av-ok-fill: rgba(74, 222, 128, 0.14);
+  --av-warn: #fbbf24;
+  --av-warn-fill: rgba(251, 191, 36, 0.14);
   --av-toast: #334155;
 `;
 

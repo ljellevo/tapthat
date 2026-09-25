@@ -25,6 +25,8 @@ export type BatchEventType =
   | 'verify-passed'
   | 'verify-failed'
   | 'committed'
+  | 'pushed'
+  | 'push-failed'
   | 'failed'
   | 'reverted';
 
@@ -84,8 +86,34 @@ export interface Health {
   repo: { branch: string | null; head: string | null; clean: boolean | null };
   devServer: { reachable: boolean; url: string };
   queue: { depth: number; running: boolean };
+  /**
+   * `envCredential` tells the extension whether it must collect a credential
+   * before the first Apply, or whether the sidecar will fall back to its own.
+   */
+  agent: { cliVersion: string | null; envCredential: boolean };
   killSwitch: boolean;
 }
+
+/** GET /api/config — what the extension needs to configure itself from URL + token alone. */
+export interface SidecarInfo {
+  version: string;
+  branch: string;
+  allowedOrigins: string[];
+  proxy: boolean;
+  push: boolean;
+}
+
+export interface RevertAccepted {
+  revertSha: string;
+}
+
+/**
+ * SSE on GET /api/batches/:id/events?t=<eventsToken>. Every BatchEvent is sent
+ * as a default `message` with `id: <seq>`, so a reconnect with Last-Event-ID
+ * resumes exactly where it left off. When the batch reaches a terminal state the
+ * stream sends one `done` event carrying the full BatchStatus, then closes.
+ */
+export const SSE_DONE_EVENT = 'done';
 
 export interface ApiError {
   error: string;

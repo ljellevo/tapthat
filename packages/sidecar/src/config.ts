@@ -6,6 +6,12 @@ export interface Config {
   port: number;
   host: string;
   repoRoot: string;
+  /**
+   * Where to clone from when repoRoot has no checkout yet — the standalone /
+   * PaaS shape, where the container starts with an empty volume. Null on the
+   * npx and Compose paths, where the checkout already exists.
+   */
+  repoUrl: string | null;
   branch: string;
   devServerUrl: string;
   allowedOrigins: string[];
@@ -34,8 +40,8 @@ export interface Config {
    */
   proxy: { enabled: boolean; target: string | null };
   /** Let the sidecar own the dev server's lifecycle (standalone/PaaS shape). */
-  devServer: { start: boolean; command: string | null; readyTimeoutMs: number };
-  limits: { batchesPerHour: number };
+  devServer: { start: boolean; command: string | null; install: string | null; readyTimeoutMs: number };
+  limits: { batchesPerHour: number; batchesPerHourPerCredential: number };
 }
 
 export const CONFIG_FILENAME = 'tapthat.config.json';
@@ -45,6 +51,7 @@ export function defaults(cwd: string): Config {
     port: 7420,
     host: '127.0.0.1',
     repoRoot: cwd,
+    repoUrl: null,
     branch: 'dev',
     devServerUrl: 'http://localhost:5173',
     allowedOrigins: [],
@@ -67,8 +74,8 @@ export function defaults(cwd: string): Config {
     killSwitch: false,
     auth: { mode: 'token' },
     proxy: { enabled: false, target: null },
-    devServer: { start: false, command: null, readyTimeoutMs: 120_000 },
-    limits: { batchesPerHour: 30 },
+    devServer: { start: false, command: null, install: null, readyTimeoutMs: 120_000 },
+    limits: { batchesPerHour: 60, batchesPerHourPerCredential: 20 },
   };
 }
 
@@ -132,6 +139,13 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
   if (env.TAPTHAT_BRANCH) config.branch = env.TAPTHAT_BRANCH;
   if (env.TAPTHAT_DEV_SERVER) config.devServerUrl = env.TAPTHAT_DEV_SERVER;
   if (env.TAPTHAT_REPO_ROOT) config.repoRoot = env.TAPTHAT_REPO_ROOT;
+  if (env.TAPTHAT_REPO_URL) config.repoUrl = env.TAPTHAT_REPO_URL;
+  if (env.TAPTHAT_INSTALL_COMMAND) config.devServer.install = env.TAPTHAT_INSTALL_COMMAND;
+  if (env.TAPTHAT_GIT_PUSH === '1') config.git.push = true;
+  if (env.TAPTHAT_GIT_PUSH === '0') config.git.push = false;
+  if (env.TAPTHAT_GIT_REMOTE) config.git.remote = env.TAPTHAT_GIT_REMOTE;
+  if (env.TAPTHAT_AGENT_COMMAND) config.agent.command = env.TAPTHAT_AGENT_COMMAND;
+  if (env.TAPTHAT_AGENT_MODEL) config.agent.model = env.TAPTHAT_AGENT_MODEL;
   if (env.TAPTHAT_ALLOWED_ORIGINS) {
     config.allowedOrigins = env.TAPTHAT_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
   }
@@ -177,6 +191,11 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
   }
   if (config.agent.timeoutMs < 1000) {
     problems.push(`agent.timeoutMs: ${config.agent.timeoutMs} is too short to be useful`);
+  }
+  if (config.repoUrl && /^https?:\/\/[^/]*@/.test(config.repoUrl)) {
+    problems.push(
+      'repoUrl: contains credentials. Put the token in TAPTHAT_GIT_TOKEN instead — a URL with a token in it ends up in .git/config and in error messages.',
+    );
   }
   if (config.devServer.start && !config.devServer.command) {
     problems.push('devServer.command: required when devServer.start is true (TAPTHAT_DEV_COMMAND)');

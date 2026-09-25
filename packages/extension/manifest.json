@@ -3,16 +3,29 @@
   "name": "TapThat",
   "version": "0.1.0",
   "description": "Comment on any live webpage, then export the feedback as a prompt for a coding agent.",
-  "permissions": ["storage", "activeTab"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "dist/background.js",
     "type": "module"
   },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["dist/content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "dist/content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -22,7 +35,9 @@
   },
   "commands": {
     "toggle-annotate": {
-      "suggested_key": { "default": "Alt+Shift+C" },
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
       "description": "Toggle annotation mode"
     }
   }

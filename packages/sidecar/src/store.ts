@@ -15,7 +15,11 @@ export interface StoredCredential {
  * The wire shape minus the live queue depth, plus the SSE token that must never
  * be returned by the status endpoint.
  */
-export type StoredBatch = Omit<BatchStatus, 'queueDepth'> & { eventsToken: string };
+export type StoredBatch = Omit<BatchStatus, 'queueDepth'> & {
+  eventsToken: string;
+  /** Which credential paid for this run ('env' or a handle), for per-credential limits. */
+  credentialRef?: string;
+};
 
 interface Shape {
   version: 1;
@@ -96,9 +100,10 @@ export class Store {
     this.schedule();
   }
 
-  /** Batch creation times within the window, for rate limiting. */
-  recentBatchTimes(sinceMs: number): number[] {
+  /** Batch creation times within the window, optionally for one credential, for rate limiting. */
+  recentBatchTimes(sinceMs: number, credentialRef?: string): number[] {
     return Object.values(this.data.batches)
+      .filter((b) => credentialRef === undefined || b.credentialRef === credentialRef)
       .map((b) => Date.parse(b.createdAt))
       .filter((t) => t >= sinceMs);
   }
@@ -119,9 +124,11 @@ export class Store {
     return true;
   }
 
+  static defaultDir(repoRoot: string): string {
+    return process.env.TAPTHAT_STATE_DIR ?? join(repoRoot, '.tapthat');
+  }
+
   static defaultPath(repoRoot: string): string {
-    return process.env.TAPTHAT_STATE_DIR
-      ? join(process.env.TAPTHAT_STATE_DIR, 'state.json')
-      : join(repoRoot, '.tapthat', 'state.json');
+    return join(Store.defaultDir(repoRoot), 'state.json');
   }
 }

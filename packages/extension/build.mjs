@@ -32,6 +32,12 @@ const configs = [
     outfile: out('content.js'),
     format: 'iife',
   },
+  {
+    ...shared,
+    entryPoints: [src('options', 'index.ts')],
+    outfile: out('options.js'),
+    format: 'iife',
+  },
 ];
 
 if (watch) {

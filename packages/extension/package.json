@@ -9,7 +9,7 @@
     "build": "node build.mjs",
     "dev": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node test/run-selectors.mjs && node test/run-classnames.mjs && node test/run-export.mjs",
+    "test": "node test/run-selectors.mjs && node test/run-classnames.mjs && node test/run-export.mjs && node test/run-full.mjs && node --no-warnings --experimental-eventsource test/run-client.mjs",
     "check": "npm run typecheck && npm run test && npm run build",
     "package": "npm run build && node package.mjs",
     "fixture": "python3 -m http.server 8731 --directory test"

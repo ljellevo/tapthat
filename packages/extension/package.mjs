@@ -28,7 +28,7 @@ if (pkg.version !== manifest.version) {
   process.exit(1);
 }
 
-if (!existsSync(join(root, 'dist', 'content.js'))) {
+if (!['content.js', 'background.js', 'options.js'].every((f) => existsSync(join(root, 'dist', f)))) {
   console.error('dist/ is missing — run `npm run build` first');
   process.exit(1);
 }
@@ -38,8 +38,10 @@ rmSync(zipPath, { force: true });
 mkdirSync(outDir, { recursive: true });
 
 // README.md is package-local (written for someone who just unzipped a folder);
-// LICENSE lives at the repo root and is shared by every package.
-for (const entry of ['manifest.json', 'dist', 'README.md']) {
+// LICENSE lives at the repo root and is shared by every package. options.html
+// must be listed: an options page missing from the zip is a silent 404 that
+// only shows up after release.
+for (const entry of ['manifest.json', 'dist', 'options.html', 'README.md']) {
   cpSync(join(root, entry), join(outDir, entry), { recursive: true });
 }
 cpSync(join(repoRoot, 'LICENSE'), join(outDir, 'LICENSE'));

@@ -21,6 +21,11 @@ chrome.commands.onCommand.addListener((command) => {
 });
 
 chrome.runtime.onMessage.addListener((msg: ContentMessage, sender) => {
+  // Content scripts cannot open the options page themselves.
+  if (msg.type === 'OPEN_OPTIONS') {
+    void chrome.runtime.openOptionsPage();
+    return;
+  }
   const tabId = sender.tab?.id;
   if (tabId === undefined) return;
 

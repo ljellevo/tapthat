@@ -39,6 +39,13 @@ export interface CommentRecord {
   /** Resolved comments are hidden from the page and left out of exports. */
   resolved?: boolean;
   resolvedAt?: string;
+
+  /**
+   * Full mode only: the sidecar's HEAD when this comment was captured. When the
+   * branch has moved since, the element may no longer look the way the reviewer
+   * saw it, and the panel says so before they apply. Never rendered into prompts.
+   */
+  baseSha?: string;
 }
 
 export interface PageSession {

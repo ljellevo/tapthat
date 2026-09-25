@@ -1,6 +1,7 @@
 import type { CommentRecord } from '../types';
 import { buildRecord } from './capture';
 import { buildMarkdown, copyToClipboard } from './export';
+import * as full from './full';
 import { pageContext } from './page';
 import * as picker from './picker';
 import * as store from './store';
@@ -23,6 +24,7 @@ function refreshPins() {
   if (stale.size) store.markStale(stale);
   panel.render(store.list());
   launcher.setCount(open.length);
+  full.render();
 }
 
 // ---------------------------------------------------------------- mode
@@ -43,7 +45,10 @@ async function ensureMounted() {
     onExport: () => void doExport(),
     onClear: () => void store.clear().then(refreshPins),
     onClose: () => deactivate(),
+    onApply: () => void full.apply(),
+    onBatchAction: (action, batchId) => void full.batchAction(action, batchId),
   });
+  full.render();
 
   pins.setClickHandler((record, target) => {
     if (!target) {
@@ -60,6 +65,7 @@ async function activate() {
   await ensureMounted();
 
   panel.open();
+  full.onPanelOpen();
   launcher.setActive(true);
   chrome.runtime.sendMessage({ type: 'ACTIVE', active: true }).catch(() => {});
 
@@ -77,6 +83,7 @@ function deactivate() {
   picker.stop();
   composer.close();
   panel.close();
+  full.onPanelClose();
   highlight.hide();
   launcher.setActive(false);
   chrome.runtime.sendMessage({ type: 'ACTIVE', active: false }).catch(() => {});
@@ -96,6 +103,8 @@ function openComposerFor(target: Element) {
     mode: 'create',
     onSave: (text) => {
       const record = buildRecord(target, text, store.nextNumber());
+      const baseSha = full.baseShaForNewComment();
+      if (baseSha) record.baseSha = baseSha;
       void store.add(record).then(() => {
         picker.resume();
         refreshPins();
@@ -184,6 +193,12 @@ async function rehydrate() {
   refreshPins();
 }
 
+async function mountLauncher() {
+  await launcher.mount({ onToggle: toggle });
+  launcher.setCount(store.open().length);
+  launcher.setActive(active);
+}
+
 /**
  * SPA route changes don't reload the page, so storage key and pin anchors have
  * to be recomputed. Patching the history methods is the only reliable signal
@@ -196,7 +211,7 @@ function watchNavigation() {
     currentKey = key;
     composer.close();
     if (active) picker.resume();
-    void rehydrate();
+    void rehydrate().then(() => full.onNavigate());
   };
 
   for (const method of ['pushState', 'replaceState'] as const) {
@@ -236,14 +251,14 @@ chrome.runtime.onMessage.addListener((msg: { type: string }) => {
 async function init() {
   await rehydrate();
   watchNavigation();
+  await full.init();
 
-  // On local dev hosts the extension is always one click away, no keyboard
-  // shortcut or toolbar trip required.
-  if (launcher.isLocalHost()) {
-    await launcher.mount({ onToggle: toggle });
-    launcher.setCount(store.list().length);
-    launcher.setActive(active);
-  }
+  // On local dev hosts — and on any site configured for Full, which is a dev
+  // environment by definition — the extension is always one click away.
+  if (launcher.isLocalHost() || full.currentMode() === 'full') await mountLauncher();
+  full.onModeChange((mode) => {
+    if (mode === 'full') void mountLauncher();
+  });
 }
 
 void init();

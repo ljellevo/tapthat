@@ -22,8 +22,22 @@ export interface RepoStatus {
   untracked: string[];
 }
 
+/**
+ * A token for an HTTPS remote, sent as a per-command header rather than written
+ * into the remote URL — a URL with a token in it ends up in .git/config, in
+ * `git remote -v`, and in every error message git prints.
+ */
+export function gitAuthArgs(token: string | null | undefined): string[] {
+  if (!token) return [];
+  const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
+  return ['-c', `http.extraHeader=Authorization: Basic ${basic}`];
+}
+
 export class Repo {
-  constructor(readonly root: string) {}
+  constructor(
+    readonly root: string,
+    private readonly authToken: string | null = null,
+  ) {}
 
   private async gitRaw(...args: string[]): Promise<string> {
     const { stdout } = await exec('git', args, {
@@ -66,7 +80,13 @@ export class Repo {
   }
 
   async branch(): Promise<string> {
-    return this.git('rev-parse', '--abbrev-ref', 'HEAD');
+    // symbolic-ref also answers on a repo with no commits yet, where rev-parse
+    // fails; rev-parse is the fallback for a detached HEAD.
+    try {
+      return await this.git('symbolic-ref', '--short', '-q', 'HEAD');
+    } catch {
+      return this.git('rev-parse', '--abbrev-ref', 'HEAD');
+    }
   }
 
   /**
@@ -160,6 +180,34 @@ export class Repo {
       message,
     );
     return this.head();
+  }
+
+  /** Pushes the current branch. Off the critical path: the reviewer already sees the change. */
+  async push(remote: string, branch: string): Promise<void> {
+    await this.git(...gitAuthArgs(this.authToken), 'push', remote, `HEAD:refs/heads/${branch}`);
+  }
+
+  /**
+   * Brings a clean checkout up to date with its remote, fast-forward only.
+   * Anything that is not a fast-forward is left alone and reported: the
+   * alternative is a hard reset, which is exactly what R1 rules out.
+   */
+  async fastForward(remote: string, branch: string): Promise<string | null> {
+    await this.git(...gitAuthArgs(this.authToken), 'fetch', remote, branch);
+    if (!(await this.isClean())) return 'working tree has local changes; not updating from the remote';
+    try {
+      await this.git('merge', '--ff-only', `${remote}/${branch}`);
+      return null;
+    } catch {
+      return `local ${branch} has diverged from ${remote}/${branch}; not updating`;
+    }
+  }
+
+  static async clone(url: string, branch: string, dest: string, token: string | null): Promise<Repo> {
+    await exec('git', [...gitAuthArgs(token), 'clone', '--branch', branch, url, dest], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return new Repo(dest, token);
   }
 
   async revert(sha: string): Promise<{ ok: true; sha: string } | { ok: false; conflicts: string[] }> {
