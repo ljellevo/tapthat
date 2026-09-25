@@ -6,7 +6,7 @@
  * `audit-prod`.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -274,10 +274,16 @@ async function startServer(work, overrides = {}) {
 
 // ── CLI: init and audit-prod ─────────────────────────────────────────────────
 {
-  const cli = join(pkgRoot, 'dist', 'cli.js');
-  if (!existsSync(cli)) {
-    check('dist/cli.js exists (run the build first)', false);
-  } else {
+  // Bundled from src like the modules above, not read from dist/: CI starts from
+  // a clean checkout where nothing has been built yet, and a stale dist/ would
+  // test yesterday's code.
+  const cli = join(modDir, 'cli.mjs');
+  await esbuild.build({
+    entryPoints: [join(pkgRoot, 'src', 'cli.ts')],
+    bundle: true, platform: 'node', format: 'esm', target: 'node20',
+    packages: 'bundle', outfile: cli, logLevel: 'silent',
+  });
+  {
     const app = join(scratch, 'init-app');
     mkdirSync(app);
     git(app, 'init', '-q', '-b', 'dev');
