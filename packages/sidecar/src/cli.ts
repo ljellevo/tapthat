@@ -99,7 +99,9 @@ async function bootstrapOne(repoConfig: RepoConfig, remote: string, gitToken: st
     return null;
   }
 
-  if (url) {
+  // Only a checkout on its base branch follows the remote. One on a session
+  // branch is mid-session: moving it would change what reviewers are looking at.
+  if (url && (await repo.branch().catch(() => null)) === branch) {
     const skipped = await repo.fastForward(remote, branch).catch((err) => String(err));
     if (skipped) console.warn(`[tapthat] ${name}: ${skipped}`);
   }
@@ -123,8 +125,11 @@ async function bootstrapRepos(config: Config, gitToken: string | null, done: Set
   return null;
 }
 
-/** Boot checks shared by serve and run-file. Returns null when everything holds. */
-async function preflight(config: Config): Promise<string | null> {
+/**
+ * Boot checks shared by serve and run-file. Returns null when everything holds.
+ * `sessionBranch` is also acceptable while a playground session is active.
+ */
+async function preflight(config: Config, sessionBranch: string | null = null): Promise<string | null> {
   for (const repoConfig of config.repos) {
     const repo = new Repo(repoConfig.root);
     const worktreeProblem = await repo.worktreeProblem();
@@ -133,7 +138,7 @@ async function preflight(config: Config): Promise<string | null> {
     // An agent editing a branch nobody is looking at is the worst silent failure
     // in this system, so a mismatch is fatal rather than a warning.
     const checkedOut = await repo.branch();
-    if (checkedOut !== repoConfig.branch) {
+    if (checkedOut !== repoConfig.branch && checkedOut !== sessionBranch) {
       const which = config.repos.length > 1 ? ` (${repoConfig.name})` : '';
       return (
         `Branch mismatch${which}: ${CONFIG_FILENAME} targets "${repoConfig.branch}" but ${repoConfig.root} has "${checkedOut}" checked out.\n` +
@@ -309,7 +314,9 @@ async function cmdServe(): Promise<number> {
     }
   }
 
-  const failure = await preflight(config);
+  const store = await Store.open(Store.defaultPath(config.repoRoot));
+  const session = store.getSession();
+  const failure = await preflight(config, session && session.state !== 'failed' ? session.branch : null);
   if (failure) {
     console.error(failure);
     return 78;
@@ -318,7 +325,6 @@ async function cmdServe(): Promise<number> {
   await excludeStateDir(config);
   const workspace = Workspace.fromConfig(config, gitToken);
   const repo = workspace.primary.repo;
-  const store = await Store.open(Store.defaultPath(config.repoRoot));
   const audit = createAudit(join(Store.defaultDir(config.repoRoot), 'audit.log'));
   const encryptionKey = deriveKey(process.env.TAPTHAT_ENCRYPTION_KEY);
   if (!encryptionKey) {
@@ -387,13 +393,17 @@ async function cmdServe(): Promise<number> {
   }
   console.log(`  agent   ${config.agent.command} ${agentVersion ?? '(not found)'} [${config.agent.allowedTools}]`);
   console.log(`  proxy   ${config.proxy.enabled ? `on → ${config.proxy.target ?? config.devServerUrl}` : 'off'}`);
-  console.log(`  push    ${config.git.push ? `on → ${config.git.remote}/${config.branch}` : 'off'}`);
+  console.log(
+    config.git.mode === 'session'
+      ? `  mode    session — changes reach ${config.branch} on Commit, in order ${config.git.deployOrder.join(' → ') || 'as listed'}`
+      : `  push    ${config.git.push ? `on → ${config.git.remote}/${config.branch}` : 'off'}`,
+  );
   console.log(`  origins ${config.allowedOrigins.join(', ') || '(none — Apply will be refused)'}`);
   console.log('');
   console.log('  Paste into the extension options page:');
   console.log(`    Sidecar URL  ${sidecarUrl}`);
   console.log(`    Token        ${token ? `${token.slice(0, 4)}… (TAPTHAT_TOKEN)` : '(auth disabled)'}`);
-  if (platform && config.git.push) {
+  if (platform && config.git.push && config.git.mode === 'commit') {
     console.log('');
     console.log(`  ⚠ ${platform} redeploys on push. git.push is enabled, so if this service`);
     console.log(`    deploys from "${config.branch}", every applied batch will restart it and`);

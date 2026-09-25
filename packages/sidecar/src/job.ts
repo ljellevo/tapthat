@@ -46,7 +46,7 @@ export interface BatchResult {
 }
 
 /** A subject line of at most 72 characters, cut on a word boundary. */
-function subjectLine(summary: string): string {
+export function subjectLine(summary: string): string {
   const first = summary.split('\n')[0]!.trim();
   if (first.length <= 72) return first || 'Apply TapThat feedback';
   const cut = first.slice(0, 71);

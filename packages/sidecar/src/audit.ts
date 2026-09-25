@@ -10,7 +10,12 @@ export type AuditEvent =
   | 'batch.accepted'
   | 'batch.rejected'
   | 'batch.finished'
-  | 'batch.reverted';
+  | 'batch.reverted'
+  | 'session.started'
+  | 'session.failed'
+  | 'session.committed'
+  | 'session.discarded'
+  | 'session.restored';
 
 /**
  * Append-only record of who asked the sidecar to do what. The endpoint is a

@@ -203,6 +203,91 @@ export class Repo {
     }
   }
 
+  async fetch(remote: string, branch: string): Promise<void> {
+    await this.git(...gitAuthArgs(this.authToken), 'fetch', remote, branch);
+  }
+
+  /** The full sha a ref points at. */
+  async resolveRef(ref: string): Promise<string> {
+    return this.git('rev-parse', '--verify', `${ref}^{commit}`);
+  }
+
+  /** Subjects of the commits in `from..to`, oldest first. */
+  async subjects(from: string, to = 'HEAD'): Promise<string[]> {
+    const out = await this.git('log', '--reverse', '--format=%s', `${from}..${to}`);
+    return out ? out.split('\n') : [];
+  }
+
+  /** Files changed between two commits. */
+  async diffNames(from: string, to = 'HEAD'): Promise<string[]> {
+    const out = await this.gitRaw('diff', '--name-only', '-z', from, to);
+    return out.split('\0').filter(Boolean);
+  }
+
+  /**
+   * A commit object built without touching the working tree or the index —
+   * how a session is squashed and replayed onto the latest dev while reviewers
+   * keep looking at the playground.
+   */
+  async commitTree(
+    tree: string,
+    parent: string,
+    message: string,
+    author: { name: string; email: string },
+  ): Promise<string> {
+    const { stdout } = await exec('git', ['commit-tree', tree, '-p', parent, '-m', message], {
+      cwd: this.root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: author.name,
+        GIT_AUTHOR_EMAIL: author.email,
+        GIT_COMMITTER_NAME: author.name,
+        GIT_COMMITTER_EMAIL: author.email,
+      },
+    });
+    return stdout.trim();
+  }
+
+  /**
+   * Three-way merges two commits into a tree, in memory. Nothing on disk
+   * changes either way, so a conflict needs no cleanup.
+   */
+  async mergeTrees(ours: string, theirs: string): Promise<{ ok: true; tree: string } | { ok: false; conflicts: string[] }> {
+    try {
+      const out = await this.git('merge-tree', '--write-tree', '--name-only', ours, theirs);
+      return { ok: true, tree: out.split('\n')[0]! };
+    } catch (err) {
+      const stdout = String((err as { stdout?: string }).stdout ?? '');
+      const [, ...rest] = stdout.split('\n');
+      const blank = rest.indexOf('');
+      return { ok: false, conflicts: (blank === -1 ? rest : rest.slice(0, blank)).filter(Boolean) };
+    }
+  }
+
+  /** Pushes a specific commit to a branch; a non-fast-forward is refused by the remote. */
+  async pushCommit(remote: string, sha: string, branch: string): Promise<void> {
+    await this.git(...gitAuthArgs(this.authToken), 'push', remote, `${sha}:refs/heads/${branch}`);
+  }
+
+  /** Creates a branch at `startPoint` and checks it out. Refused by git if it would clobber changes. */
+  async switchNew(branch: string, startPoint: string): Promise<void> {
+    await this.git('switch', '-c', branch, startPoint);
+  }
+
+  /** Checks out an existing branch. Refused by git if it would clobber changes. */
+  async switchTo(branch: string): Promise<void> {
+    await this.git('switch', branch);
+  }
+
+  /** Moves the checked-out branch forward to `ref`; refused unless it is a fast-forward. */
+  async fastForwardTo(ref: string): Promise<void> {
+    await this.git('merge', '--ff-only', ref);
+  }
+
+  async deleteBranch(branch: string): Promise<void> {
+    await this.git('branch', '-D', branch);
+  }
+
   static async clone(url: string, branch: string, dest: string, token: string | null): Promise<Repo> {
     await exec('git', [...gitAuthArgs(token), 'clone', '--branch', branch, url, dest], {
       maxBuffer: 16 * 1024 * 1024,

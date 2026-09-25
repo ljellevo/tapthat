@@ -57,6 +57,8 @@ export interface BatchRequest {
   page: PageContext;
   comments: CommentRecord[];
   client?: { name: string; version: string };
+  /** Shown to teammates in the playground's pending changes. Free text, not an identity. */
+  reviewer?: string;
 }
 
 export interface BatchAccepted {
@@ -76,6 +78,7 @@ export interface BatchStatus {
   branch: string;
   pageUrl: string;
   commentIds: string[];
+  reviewer?: string | null;
   events: BatchEvent[];
   queueDepth: number;
   result: {
@@ -119,6 +122,71 @@ export interface Health {
    */
   agent: { cliVersion: string | null; envCredential: boolean };
   killSwitch: boolean;
+  /** `session`: changes collect in a playground session and reach `dev` on Commit. */
+  mode: 'commit' | 'session';
+  session: { id: string; state: SessionState; pending: number } | null;
+}
+
+// ── Sessions (git.mode "session": the playground flow) ─────────────────────
+
+export type SessionState = 'starting' | 'active' | 'committing' | 'discarding' | 'failed';
+
+export interface SessionEvent {
+  at: string;
+  message: string;
+  /** Progress through a long step, e.g. copying databases: 2 of 5. */
+  step?: number;
+  steps?: number;
+}
+
+/** A batch that landed in the session and will travel with Commit. */
+export interface PendingBatch {
+  batchId: string;
+  at: string;
+  summary: string;
+  files: string[];
+  comments: string[];
+  pageUrl: string;
+  reviewer: string | null;
+}
+
+export interface SessionStatus {
+  id: string;
+  state: SessionState;
+  startedAt: string;
+  startedBy: string | null;
+  /** The local branch batches collect on, in every repo. Never pushed. */
+  branch: string;
+  /** Each repo's `dev` head when the session started. */
+  base: RepoCommit[];
+  pending: PendingBatch[];
+  /** What Commit would send, per repo that changed. */
+  repos: Array<{ name: string; files: string[] }>;
+  events: SessionEvent[];
+  error: string | null;
+}
+
+export interface SessionOutcome {
+  id: string;
+  outcome: 'committed' | 'discarded';
+  at: string;
+  by: string | null;
+  /** Committed: the new head of `dev` in each repo that changed. */
+  commits: RepoCommit[];
+  /** Things a human still has to do, e.g. sync a shared folder to other repos. */
+  notices: string[];
+}
+
+/** GET /api/session */
+export interface SessionResponse {
+  mode: 'commit' | 'session';
+  session: SessionStatus | null;
+  last: SessionOutcome | null;
+}
+
+/** Body of POST /api/session/{start,commit,discard}. */
+export interface SessionActionRequest {
+  reviewer?: string;
 }
 
 /** GET /api/config — what the extension needs to configure itself from URL + token alone. */

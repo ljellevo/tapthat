@@ -1,6 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { BatchStatus } from '@tapthat/shared';
+import type { BatchStatus, SessionOutcome, SessionStatus } from '@tapthat/shared';
+
+/** What is persisted of a session; the pending list and per-repo files are derived. */
+export type StoredSession = Omit<SessionStatus, 'pending' | 'repos'> & { batchIds: string[] };
 
 export interface StoredCredential {
   handle: string;
@@ -17,6 +20,8 @@ export interface StoredCredential {
  */
 export type StoredBatch = Omit<BatchStatus, 'queueDepth'> & {
   eventsToken: string;
+  /** The comments' own words, for the session's commit message. */
+  commentTexts?: string[];
   /** Which credential paid for this run ('env' or a handle), for per-credential limits. */
   credentialRef?: string;
 };
@@ -25,9 +30,11 @@ interface Shape {
   version: 1;
   batches: Record<string, StoredBatch>;
   credentials: Record<string, StoredCredential>;
+  session?: StoredSession | null;
+  lastSession?: SessionOutcome | null;
 }
 
-const EMPTY: Shape = { version: 1, batches: {}, credentials: {} };
+const EMPTY: Shape = { version: 1, batches: {}, credentials: {}, session: null, lastSession: null };
 
 /** Batches older than this are dropped on boot; git is the durable record. */
 const RETAIN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -122,6 +129,25 @@ export class Store {
     delete this.data.credentials[handle];
     this.schedule();
     return true;
+  }
+
+  getSession(): StoredSession | null {
+    return this.data.session ?? null;
+  }
+
+  /** Persists the session as it stands; call after every change to it. */
+  putSession(session: StoredSession | null): void {
+    this.data.session = session;
+    this.schedule();
+  }
+
+  getLastSession(): SessionOutcome | null {
+    return this.data.lastSession ?? null;
+  }
+
+  putLastSession(outcome: SessionOutcome): void {
+    this.data.lastSession = outcome;
+    this.schedule();
   }
 
   static defaultDir(repoRoot: string): string {

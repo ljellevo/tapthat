@@ -10,6 +10,7 @@ import {
   type CredentialInfo,
   type Health,
   type RevertAccepted,
+  type SessionActionRequest,
   type SidecarInfo,
 } from '@tapthat/shared';
 import { makeAgentRunner, type Credential } from './agent';
@@ -23,6 +24,7 @@ import type { Repo } from './repo';
 import type { Store, StoredBatch } from './store';
 import { makeVerifier } from './verify';
 import { revertAll, Workspace } from './workspace';
+import { SessionError, Sessions, type SessionHooks } from './session';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 /** Keeps idle SSE connections alive through PaaS edges that drop quiet sockets. */
@@ -59,6 +61,8 @@ export interface ServerDeps {
   audit?: Audit;
   /** Every repository a batch may change. Defaults to `repo` alone. */
   workspace?: Workspace;
+  /** Session mode: the data half of Start session and Discard. */
+  sessionHooks?: SessionHooks;
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -108,6 +112,8 @@ export function createHttpServer(deps: ServerDeps): Server {
   const branchOf = (name: string) => ws.get(name)?.config?.branch ?? config.branch;
   const audit: Audit = deps.audit ?? (() => {});
   const queue = new Queue();
+  const sessions = new Sessions({ config, workspace: ws, store, queue, audit, hooks: deps.sessionHooks });
+  void sessions.reconcile();
   const proxy = config.proxy.enabled ? createProxy(config.proxy.target ?? config.devServerUrl) : null;
   /** Open SSE responses per batch. */
   const streams = new Map<string, Set<ServerResponse>>();
@@ -252,6 +258,13 @@ export function createHttpServer(deps: ServerDeps): Server {
         queue: { depth: queue.depth(config.branch), running: queue.isRunning(config.branch) },
         agent: { cliVersion: deps.agentVersion ?? null, envCredential: !!deps.envCredential },
         killSwitch: config.killSwitch,
+        mode: config.git.mode,
+        session: (() => {
+          const current = sessions.current();
+          if (!current) return null;
+          const pending = current.batchIds.filter((id) => store.getBatch(id)?.state === 'committed').length;
+          return { id: current.id, state: current.state, pending };
+        })(),
       } satisfies Health);
       return;
     }
@@ -288,6 +301,33 @@ export function createHttpServer(deps: ServerDeps): Server {
         proxy: config.proxy.enabled,
         push: config.git.push,
       } satisfies SidecarInfo);
+      return;
+    }
+
+    if (path === '/api/session' && req.method === 'GET') {
+      json(res, 200, await sessions.status());
+      return;
+    }
+
+    const sessionAction = /^\/api\/session\/(start|commit|discard)$/.exec(path);
+    if (sessionAction && req.method === 'POST') {
+      const body = (await readBody(req)) as SessionActionRequest;
+      const reviewer = typeof body.reviewer === 'string' && body.reviewer.trim() ? body.reviewer.trim().slice(0, 80) : null;
+      try {
+        if (sessionAction[1] === 'start') {
+          sessions.start(reviewer);
+          json(res, 202, await sessions.status());
+        } else if (sessionAction[1] === 'commit') {
+          const outcome = await sessions.commit(reviewer);
+          json(res, 200, outcome);
+        } else {
+          const outcome = await sessions.discard(reviewer);
+          json(res, 200, outcome);
+        }
+      } catch (err) {
+        if (!(err instanceof SessionError)) throw err;
+        json(res, err.status, { error: err.code, message: err.message, ...err.details });
+      }
       return;
     }
 
@@ -351,6 +391,14 @@ export function createHttpServer(deps: ServerDeps): Server {
     const batch = (await readBody(req)) as BatchRequest;
     if (!batch?.batchId || !Array.isArray(batch.comments) || !batch.page) {
       reject(res, 400, { error: 'bad_request', message: 'Expected { batchId, page, comments }.' });
+      return;
+    }
+
+    // In session mode a batch needs an active session: never onto a playground
+    // that is still copying data or halfway through sending to dev.
+    const gate = sessions.gate();
+    if (gate) {
+      reject(res, gate.status, { error: gate.code, message: gate.message }, batch.batchId);
       return;
     }
 
@@ -419,6 +467,8 @@ export function createHttpServer(deps: ServerDeps): Server {
       branch: config.branch,
       pageUrl: batch.page.url,
       commentIds: batch.comments.map((c) => c.id),
+      commentTexts: batch.comments.map((c) => c.comment),
+      reviewer: typeof batch.reviewer === 'string' ? batch.reviewer.trim().slice(0, 80) || null : null,
       events: [],
       eventsToken: `ev_${randomUUID().replace(/-/g, '')}`,
       credentialRef,
@@ -483,7 +533,10 @@ export function createHttpServer(deps: ServerDeps): Server {
         );
         // Still inside the queue slot: a push racing the next job's commit would
         // push a half-finished history.
-        if (outcome.commits?.length && config.git.push) await push(outcome.commits.map((c) => c.repo));
+        // Session mode never pushes per batch: the session reaches dev on Commit.
+        if (outcome.commits?.length && config.git.push && config.git.mode === 'commit') {
+          await push(outcome.commits.map((c) => c.repo));
+        }
         return outcome;
       });
 
@@ -499,6 +552,7 @@ export function createHttpServer(deps: ServerDeps): Server {
       };
       current.error = result.error ?? null;
       store.putBatch(current);
+      if (result.commits?.length) sessions.recordBatch(record.batchId);
     } catch (err) {
       const current = store.getBatch(record.batchId);
       if (!current) return;
