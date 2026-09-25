@@ -26,6 +26,11 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage, sender) => {
     void chrome.runtime.openOptionsPage();
     return;
   }
+  if (msg.type === 'OPEN_HELP') {
+    const anchor = msg.section ? `#${encodeURIComponent(msg.section)}` : '';
+    void chrome.tabs.create({ url: chrome.runtime.getURL(`help.html${anchor}`) });
+    return;
+  }
   const tabId = sender.tab?.id;
   if (tabId === undefined) return;
 

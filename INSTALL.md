@@ -183,6 +183,11 @@ Token. Treat the token like a password.
 
 Works in Chrome, Arc, Edge, Brave and other Chromium browsers.
 
+> **For reviewers:** once the extension is installed, the **?** button in the TapThat panel
+> opens a plain-language guide inside the extension. It covers what you need from your
+> developer, how to get a Claude key, and what each status means. You can send people
+> there instead of here.
+
 1. **Download and unzip the extension.** Get `tapthat.zip` from the
    [latest release](https://github.com/ljellevo/tapthat/releases/latest) and unzip it. You
    get a folder called `tapthat`.

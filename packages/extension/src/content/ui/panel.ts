@@ -13,6 +13,7 @@ export interface PanelOptions {
   onExport(): void;
   onClear(): void;
   onClose(): void;
+  onHelp?(): void;
   /** Full mode only. */
   onApply?(): void;
   onBatchAction?(action: BatchAction, batchId: string): void;
@@ -85,6 +86,13 @@ export async function mount(opts: PanelOptions) {
   countEl = el('span', 'panel-count', '0');
   head.appendChild(countEl);
   head.appendChild(el('span', 'spacer'));
+  // Always there, Light or Full: the help page explains both, in plain language.
+  const help = el('button', 'panel-help', '?');
+  help.title = 'Help: how TapThat works and how to set it up';
+  help.setAttribute('aria-label', 'Help');
+  help.addEventListener('click', () => opts.onHelp?.());
+  help.addEventListener('pointerdown', (e) => e.stopPropagation());
+  head.appendChild(help);
   const close = el('button', undefined, '✕');
   close.title = 'Exit annotation mode (Esc)';
   close.addEventListener('click', () => opts.onClose());

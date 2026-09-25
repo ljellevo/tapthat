@@ -96,8 +96,9 @@ function makeChrome() {
       },
       onChanged: { addListener: (fn) => changeListeners.add(fn), removeListener: (fn) => changeListeners.delete(fn) },
     },
+    _sent: [],
     runtime: {
-      sendMessage: async () => {},
+      sendMessage: async (msg) => { chrome._sent.push(msg); },
       onMessage: { addListener: (fn) => messageListeners.add(fn) },
       getManifest: () => ({ version: '0.0.0-test' }),
     },
@@ -133,14 +134,37 @@ async function boot(url) {
 
 // Light: a fresh profile on a local dev host — the launcher is there, the network is not.
 {
-  const { window, requests, button } = await boot('http://localhost:3000/pricing');
+  const { window, requests, button, root } = await boot('http://localhost:3000/pricing');
   window.chrome._send({ type: 'TOGGLE' });
   await new Promise((r) => setTimeout(r, 50));
   check('Light: the panel mounts with Export', !!button('Export'));
   check('Light: Export is the primary button', button('Export')?.classList.contains('primary'));
   check('Light: Apply to dev is hidden', button('Apply to dev')?.hidden === true);
+  const help = root()?.querySelector('.panel-help');
+  check('Light: the help button is in the panel header', !!help && help.textContent === '?');
+  help?.click();
+  check('help asks the background to open the help page',
+    window.chrome._sent.some((m) => m.type === 'OPEN_HELP'), JSON.stringify(window.chrome._sent));
   check('Light: zero network requests', requests.length === 0, requests.join(', '));
   window.close();
+}
+
+// ── The help page: static, and every link into it lands somewhere ────────────
+{
+  const help = readFileSync(resolve(here, '..', 'help.html'), 'utf8');
+  const ids = new Set([...help.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  check('help.html runs no script (static, works offline)', !/<script/i.test(help));
+  const internal = [...help.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+  const missing = internal.filter((id) => !ids.has(id));
+  check('every in-page help link has a target', missing.length === 0, missing.join(', '));
+  const options = readFileSync(resolve(here, '..', 'options.html'), 'utf8');
+  const fromOptions = [...options.matchAll(/href="help\.html#([^"]+)"/g)].map((m) => m[1]);
+  const code = ['key'];  // full.ts opens help.html#key from the connect sheet
+  const dangling = [...fromOptions, ...code].filter((id) => !ids.has(id));
+  check('links from the options page and the connect sheet land on real sections',
+    fromOptions.length > 0 && dangling.length === 0, dangling.join(', '));
+  check('the zip includes help.html',
+    readFileSync(resolve(here, '..', 'package.mjs'), 'utf8').includes("'help.html'"));
 }
 
 // Full: configuring a sidecar for this origin brings Apply in without a reload.

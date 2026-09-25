@@ -209,6 +209,9 @@ async function connectFlow(): Promise<string | null> {
     onOpenSettings: () => {
       chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }).catch(() => {});
     },
+    onOpenHelp: () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_HELP', section: 'key' }).catch(() => {});
+    },
   });
   return ok ? handle : null;
 }

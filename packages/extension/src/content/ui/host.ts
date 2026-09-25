@@ -201,6 +201,16 @@ button.danger:hover { background: var(--av-danger-fill); color: var(--av-danger)
 .panel-head.dragging { cursor: grabbing; }
 
 .panel-title { font-weight: 600; font-size: 13px; }
+.panel-help {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--av-border);
+  font-weight: 600;
+  color: var(--av-muted);
+}
+.panel-help:hover { color: var(--av-blue); border-color: var(--av-blue); }
 .panel-count { color: var(--av-muted); font-size: 12px; }
 
 .panel-list {

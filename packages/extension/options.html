@@ -50,12 +50,13 @@
     .ok { color: var(--ok); } .err { color: var(--danger); } .warn { color: var(--warn); }
     .mode { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
       padding: 2px 8px; border-radius: 999px; background: var(--blue-fill); color: var(--blue); vertical-align: 3px; margin-left: 6px; }
+    .help { float: right; font-size: 13px; font-weight: 500; color: var(--blue); margin-top: 8px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   </style>
 </head>
 <body>
   <main>
-    <h1>TapThat <span class="mode" id="mode">Light</span></h1>
+    <h1>TapThat <span class="mode" id="mode">Light</span> <a class="help" href="help.html" target="_blank">Help &amp; setup guide</a></h1>
     <p class="lede">
       Without a sidecar, TapThat is <strong>Light</strong>: comment, Export, paste into your agent. Connect a sidecar
       and pages on your dev sites get an <strong>Apply to dev</strong> button that sends comments straight to an
@@ -64,7 +65,7 @@
 
     <section>
       <h2>Sidecar</h2>
-      <p class="hint">Both values are printed when the sidecar starts. Behind a proxy (Railway and similar), the URL ends in <code>/__tapthat</code>.</p>
+      <p class="hint">Your developer gives you both values (<a href="help.html#need" target="_blank">what you need</a>). Both are printed when the sidecar starts. Behind a proxy (Railway and similar), the URL ends in <code>/__tapthat</code>.</p>
       <label for="url">Sidecar URL</label>
       <input id="url" type="url" placeholder="http://localhost:7420 or https://your-dev-app.up.railway.app/__tapthat" spellcheck="false" />
       <label for="token">Access token</label>
@@ -87,6 +88,7 @@
         The agent runs on your own account. Paste an API key (<code>sk-ant-…</code>) or a token from
         <code>claude setup-token</code>. It is sent once to your sidecar, stored there encrypted, and never kept in
         the browser. It is checked the first time you apply. Skip this if your sidecar has its own key.
+        <a href="help.html#key" target="_blank">How do I get one?</a>
       </p>
       <div id="cred-state" class="result" style="margin:0 0 4px"></div>
       <label for="cred">Credential</label>

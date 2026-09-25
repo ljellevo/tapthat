@@ -4,6 +4,7 @@ export interface ConnectOptions {
   /** Saves the pasted credential; resolves to an error message to show, or null on success. */
   onSubmit(credential: string): Promise<string | null>;
   onOpenSettings(): void;
+  onOpenHelp(): void;
 }
 
 let node: HTMLDivElement | null = null;
@@ -36,6 +37,10 @@ export function open(opts: ConnectOptions): Promise<boolean> {
   input.autocomplete = 'off';
   input.spellcheck = false;
   node.appendChild(input);
+
+  const how = el('a', undefined, "Don't have a key? How to get one →");
+  how.addEventListener('click', () => opts.onOpenHelp());
+  node.appendChild(how);
 
   const error = el('div', 'error');
   error.hidden = true;

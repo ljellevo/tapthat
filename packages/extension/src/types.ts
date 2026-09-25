@@ -19,4 +19,6 @@ export type BackgroundMessage =
 export type ContentMessage =
   | { type: 'COUNT'; count: number }
   | { type: 'ACTIVE'; active: boolean }
-  | { type: 'OPEN_OPTIONS' };
+  | { type: 'OPEN_OPTIONS' }
+  /** section: an anchor in help.html, e.g. "key". */
+  | { type: 'OPEN_HELP'; section?: string };

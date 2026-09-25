@@ -19,6 +19,10 @@ requests.
   since the comments were made.
 - First Apply without a credential asks for one in the page. Only the sidecar's handle
   is stored.
+- A **?** button in the panel opens a built-in, plain-language help page: what TapThat
+  does, what a reviewer needs from their developer, how to get a Claude key, setup, what
+  each status means, safety and cost, and common problems. It is linked from the options
+  page and the key prompt, and loads nothing from the network.
 
 ### `@tapthat/sidecar` 0.1.0
 

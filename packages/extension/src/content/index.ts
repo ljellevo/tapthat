@@ -45,6 +45,9 @@ async function ensureMounted() {
     onExport: () => void doExport(),
     onClear: () => void store.clear().then(refreshPins),
     onClose: () => deactivate(),
+    onHelp: () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_HELP' }).catch(() => {});
+    },
     onApply: () => void full.apply(),
     onBatchAction: (action, batchId) => void full.batchAction(action, batchId),
   });

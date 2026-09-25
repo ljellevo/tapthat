@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TapThat help</title>
+  <style>
+    :root {
+      --blue: #2563eb; --blue-fill: rgba(37, 99, 235, 0.09); --surface: #fff; --page: #f8fafc;
+      --border: #e2e8f0; --text: #0f172a; --muted: #64748b; --ok: #15803d; --ok-fill: rgba(22, 163, 74, 0.12);
+      --warn: #b45309; --warn-fill: rgba(217, 119, 6, 0.12); --danger: #dc2626; --danger-fill: rgba(220, 38, 38, 0.1);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --blue: #3b82f6; --blue-fill: rgba(59, 130, 246, 0.14); --surface: #1e293b; --page: #0f172a;
+        --border: #334155; --text: #f1f5f9; --muted: #94a3b8; --ok: #4ade80; --ok-fill: rgba(74, 222, 128, 0.14);
+        --warn: #fbbf24; --warn-fill: rgba(251, 191, 36, 0.14); --danger: #f87171; --danger-fill: rgba(248, 113, 113, 0.14);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0; background: var(--page); color: var(--text);
+      font: 15px/1.6 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { max-width: 700px; margin: 0 auto; padding: 40px 16px 80px; }
+    h1 { font-size: 26px; margin: 0 0 6px; }
+    .lede { color: var(--muted); margin: 0 0 24px; font-size: 16px; }
+    nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 28px; }
+    nav a {
+      font-size: 13px; padding: 4px 10px; border-radius: 999px; text-decoration: none;
+      background: var(--blue-fill); color: var(--blue);
+    }
+    section {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 22px 24px; margin-bottom: 18px; scroll-margin-top: 16px;
+    }
+    section:target { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-fill); }
+    h2 { font-size: 18px; margin: 0 0 10px; }
+    h3 { font-size: 15px; margin: 18px 0 6px; }
+    p { margin: 0 0 10px; }
+    ol, ul { margin: 0 0 10px; padding-left: 22px; }
+    li { margin: 4px 0; }
+    a { color: var(--blue); }
+    kbd, code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+      background: var(--blue-fill); border-radius: 4px; padding: 1px 5px;
+    }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 4px; }
+    @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+    .card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .card h3 { margin-top: 0; }
+    .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+    .need { list-style: none; padding: 0; }
+    .need li { padding-left: 28px; position: relative; margin: 10px 0; }
+    .need li::before { content: '☐'; position: absolute; left: 4px; top: -1px; font-size: 16px; color: var(--blue); }
+    .who { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td { padding: 7px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+    tr:first-child td { border-top: 0; }
+    .pill {
+      display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: var(--blue-fill); color: var(--blue);
+    }
+    .pill.ok { background: var(--ok-fill); color: var(--ok); }
+    .pill.warn { background: var(--warn-fill); color: var(--warn); }
+    .pill.bad { background: var(--danger-fill); color: var(--danger); }
+    .pill.muted { background: var(--border); color: var(--muted); }
+    .note {
+      border-left: 3px solid var(--blue); background: var(--blue-fill); padding: 10px 14px;
+      border-radius: 0 8px 8px 0; margin: 12px 0;
+    }
+    .note.warn { border-color: var(--warn); background: var(--warn-fill); }
+    dt { font-weight: 600; margin-top: 12px; }
+    dd { margin: 2px 0 0; color: var(--text); }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>TapThat help</h1>
+    <p class="lede">
+      Leave comments directly on a website, the way you'd comment on a design, and let an AI
+      assistant make the change for you. This page explains how to set it up and what you need.
+    </p>
+
+    <nav>
+      <a href="#what">What it does</a>
+      <a href="#need">What you need</a>
+      <a href="#key">Getting a Claude key</a>
+      <a href="#setup">Setting it up</a>
+      <a href="#use">Using it</a>
+      <a href="#safe">Safety &amp; cost</a>
+      <a href="#trouble">Something's wrong</a>
+    </nav>
+
+    <section id="what">
+      <h2>What TapThat does</h2>
+      <p>You click on anything on a web page, such as a heading, a button or an image, and write
+        what you'd like changed. TapThat can then do one of two things with your comments:</p>
+      <div class="cols">
+        <div class="card">
+          <h3>Copy them</h3>
+          <p>Press <strong>Export</strong> and all your comments are copied, ready to paste to a
+            developer or into an AI tool.</p>
+          <p class="muted">Works on any website. Needs no setup at all.</p>
+        </div>
+        <div class="card">
+          <h3>Apply them</h3>
+          <p>Press <strong>Apply to dev</strong> and an AI assistant makes the change on your team's
+            test version of the site. You see it update in front of you, usually within a minute.</p>
+          <p class="muted">Only on your team's test site, and needs a little setup.</p>
+        </div>
+      </div>
+      <p>If you only want to copy comments, you're done: the extension already works. The rest of
+        this page is about <strong>Apply to dev</strong>.</p>
+    </section>
+
+    <section id="need">
+      <h2>What you need</h2>
+      <p class="who">From your developer (they set this up once for the team)</p>
+      <ul class="need">
+        <li><strong>The address of the test site</strong>, for example
+          <code>https://dev.yourcompany.com</code>. This is where you'll leave comments.</li>
+        <li><strong>The "Sidecar URL".</strong> The address TapThat sends your comments to. It often
+          looks like the test site's address with <code>/__tapthat</code> on the end.</li>
+        <li><strong>An access token.</strong> A long password that lets TapThat talk to your team's
+          test site. Keep it to yourself, like any password.</li>
+      </ul>
+      <p class="who">From you (only if your developer asks for it)</p>
+      <ul class="need">
+        <li><strong>A Claude key.</strong> The AI assistant that makes the changes is Claude, made
+          by Anthropic. Its work is paid for by whoever's key is used. Some teams share one key and
+          you won't need your own; otherwise you'll use your own.
+          <a href="#key">How to get one ↓</a></li>
+      </ul>
+      <div class="note">Not sure whether you need your own key? Skip it. TapThat will ask for it the
+        first time you press <strong>Apply to dev</strong>, and only if it's actually needed.</div>
+    </section>
+
+    <section id="key">
+      <h2>Getting a Claude key</h2>
+      <p>A Claude key is a long code that starts with <code>sk-ant-</code>. It lets TapThat use Claude
+        on your account.</p>
+      <ol>
+        <li>Go to <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>
+          and sign in, or create an account.</li>
+        <li>Under <strong>Billing</strong>, add a payment method or buy some credit. The key won't
+          work on an account with no credit.</li>
+        <li>Open <strong>API Keys</strong> and click <strong>Create Key</strong>. Name it something like
+          <em>TapThat</em>.</li>
+        <li><strong>Copy the key right away.</strong> It's shown only once. If you lose it, delete it and
+          create a new one.</li>
+        <li>Paste it into TapThat (see <a href="#setup">step 4 below</a>). Don't save it anywhere
+          else, and don't send it in chat or email.</li>
+      </ol>
+      <div class="note">Your developer may give you a different kind of key, one that starts with
+        <code>sk-ant-oat01-</code>. That works too; paste it in exactly the same place.</div>
+    </section>
+
+    <section id="setup">
+      <h2>Setting it up</h2>
+      <p>This takes about two minutes. You only do it once.</p>
+      <ol>
+        <li><strong>Open TapThat's settings.</strong> Right-click the TapThat icon in your browser's
+          toolbar and choose <strong>Options</strong>. If you don't see the icon, click the puzzle-piece
+          icon first.</li>
+        <li><strong>Paste the Sidecar URL and the access token</strong> from your developer into the
+          first two boxes. Leave "Sites that get Apply to dev" empty: it fills itself in.</li>
+        <li><strong>Click "Save &amp; test".</strong> You should see a green ✓ and the word
+          <em>Connected</em>. If you see a red ✗ instead, check that you copied both values exactly,
+          or see <a href="#trouble">Something's wrong</a>.</li>
+        <li><strong>Add your Claude key</strong> (if you need one): paste it in the
+          <strong>Claude credential</strong> box and click <strong>Save credential</strong>. Afterwards
+          you'll only ever see its last four characters, like <code>•••• 4f2a</code>.</li>
+      </ol>
+      <p>That's it. Open the test site and you'll find a round TapThat button in the corner.</p>
+    </section>
+
+    <section id="use">
+      <h2>Using it</h2>
+      <ol>
+        <li>On the test site, click the round <strong>TapThat button</strong> in the corner, or press
+          <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd>.</li>
+        <li><strong>Hover</strong> over the page. A blue outline shows what you'd be commenting on.
+          The <kbd>↑</kbd> and <kbd>↓</kbd> keys pick a bigger or smaller area.</li>
+        <li><strong>Click</strong> it and write what should change, as you'd say it to a colleague:
+          <em>"Make this button green"</em>, <em>"This heading should say Welcome back"</em>. Save with
+          <kbd>⌘</kbd> + <kbd>Enter</kbd> (Mac) or <kbd>Ctrl</kbd> + <kbd>Enter</kbd>.</li>
+        <li>Add as many comments as you like, then press <strong>Apply to dev</strong>.</li>
+        <li><strong>Watch the page.</strong> It updates by itself, and each comment shows how far along it is:</li>
+      </ol>
+      <table>
+        <tr><td><span class="pill">Queued</span></td><td>Waiting its turn. Someone else's changes are being made first.</td></tr>
+        <tr><td><span class="pill">Editing</span></td><td>Claude is working on it. The panel shows what it's doing.</td></tr>
+        <tr><td><span class="pill ok">Live</span></td><td>The change is on the page. Have a look!</td></tr>
+        <tr><td><span class="pill ok">Committed</span></td><td>Done, and saved so your developers can review it.</td></tr>
+        <tr><td><span class="pill warn">Build broken</span></td><td>The change was made but broke something. Nothing was saved. Add a comment describing the problem, or let your developer know.</td></tr>
+        <tr><td><span class="pill bad">Failed</span></td><td>Nothing was changed. The panel says why in plain text.</td></tr>
+        <tr><td><span class="pill muted">Undone</span></td><td>You pressed Undo and the change was taken back.</td></tr>
+      </table>
+      <h3>When it's done</h3>
+      <ul>
+        <li><strong>Like it?</strong> Press <strong>Resolve</strong> to tick off those comments.</li>
+        <li><strong>Don't like it?</strong> Press <strong>Undo</strong> to take the change back, or
+          write another comment to adjust it.</li>
+      </ul>
+      <div class="note">Changes are made on the <strong>test site only</strong>. The real website your
+        customers use doesn't change until your developers review and publish them.</div>
+    </section>
+
+    <section id="safe">
+      <h2>Safety &amp; cost</h2>
+      <dl>
+        <dt>Where is my Claude key kept?</dt>
+        <dd>It's sent once to your team's test server and stored there encrypted. It is never saved in
+          your browser, and it's never shown again. You'll only see its last four characters.</dd>
+        <dt>Can I take it back?</dt>
+        <dd>Yes. In TapThat's settings, click <strong>Disconnect</strong> and the test server deletes
+          it. You can also delete the key itself on
+          <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>
+          at any time.</dd>
+        <dt>What does it cost?</dt>
+        <dd>Each time you press <strong>Apply to dev</strong>, Claude's work is billed to the account
+          whose key was used. A few small changes are usually inexpensive. You can see your usage and set
+          a spending limit on console.anthropic.com. TapThat also caps how many times per hour a key
+          can be used, in case something goes wrong.</dd>
+        <dt>Which websites can it change?</dt>
+        <dd>Only your team's test site, the one your developer connected. On every other website,
+          TapThat can only copy comments. It never sends anything anywhere.</dd>
+      </dl>
+    </section>
+
+    <section id="trouble">
+      <h2>Something's wrong</h2>
+      <dl>
+        <dt>I don't see an "Apply to dev" button</dt>
+        <dd>You're either not on the test site, or TapThat isn't connected yet. Check the address you're on,
+          then open TapThat's settings and click <strong>Test connection</strong>.</dd>
+        <dt>"Can't reach the sidecar"</dt>
+        <dd>The test server is off or restarting. Wait a minute and try again. If it keeps happening, tell your
+          developer. You can still press <strong>Export</strong> to copy your comments.</dd>
+        <dt>"The sidecar rejected the token"</dt>
+        <dd>The access token doesn't match. Ask your developer for the current one and paste it again.</dd>
+        <dt>"Your saved key no longer works"</dt>
+        <dd>Paste your Claude key again. This happens when the test server was reset. If it still fails, check
+          on console.anthropic.com that the key exists and your account has credit.</dd>
+        <dt>It says "Queued" for a long time</dt>
+        <dd>Changes are made one at a time, so someone else is probably ahead of you. The panel shows how many.</dd>
+        <dt>"The page changed since you commented"</dt>
+        <dd>Someone else's change landed after you wrote your comments. Look at the page again before pressing
+          Apply, in case what you wanted is already different.</dd>
+        <dt>Anything else</dt>
+        <dd>Every error message in the panel has a <strong>Copy</strong> button. Paste it to your developer:
+          it tells them exactly what happened.</dd>
+      </dl>
+    </section>
+
+    <p class="muted">Setting this up for your team? The developer guide is
+      <a href="https://github.com/ljellevo/tapthat/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a>
+      on GitHub.</p>
+  </main>
+</body>
+</html>
