@@ -1,0 +1,46 @@
+{
+  "batchId": "fixture-good",
+  "credentialHandle": null,
+  "page": {
+    "url": "http://localhost:5173/",
+    "title": "Example app",
+    "viewport": {
+      "w": 1280,
+      "h": 800
+    },
+    "capturedAt": "2025-01-01T00:00:00.000Z"
+  },
+  "comments": [
+    {
+      "id": "c1",
+      "n": 1,
+      "comment": "Make this heading smaller \u2014 it dominates the page.",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "selector": "main > h1.title",
+      "domPath": "body > div#root > main > h1.title",
+      "tagName": "h1",
+      "attributes": {},
+      "text": "Welcome",
+      "html": "<h1 class=\"title\">Welcome</h1>",
+      "ancestors": [],
+      "landmark": "<main>",
+      "nearestHeading": "Welcome",
+      "siblingIndex": 1,
+      "siblingCount": 1,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 320,
+        "h": 40
+      },
+      "styles": {
+        "font-size": "32px",
+        "font-weight": "700"
+      }
+    }
+  ],
+  "client": {
+    "name": "tapthat-fixture",
+    "version": "0.1.0"
+  }
+}

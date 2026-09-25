@@ -2,10 +2,10 @@ node_modules/
 dist/
 .package/
 tapthat.zip
-test/sample-export.md
-test/harness.js
-test/_entry.ts
-test/_export-entry.ts
+**/test/sample-export.md
+**/test/harness.js
+**/test/_entry.ts
+**/test/_export-entry.ts
 .DS_Store
 .idea/
 

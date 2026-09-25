@@ -1,0 +1,15 @@
+{
+  "name": "@tapthat/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Types, HTTP protocol and the prompt builder shared by the extension and the sidecar.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck"
+  }
+}
