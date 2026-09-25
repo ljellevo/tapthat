@@ -12,3 +12,5 @@ export { createProxy } from './proxy';
 export { startDevServer } from './dev-server';
 export { createAudit } from './audit';
 export { seal, unseal } from './credentials';
+export { Workspace, mirrorDirectory, revertAll } from './workspace';
+export { DevServers } from './dev-server';

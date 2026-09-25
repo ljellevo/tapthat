@@ -30,14 +30,23 @@ export type BatchEventType =
   | 'failed'
   | 'reverted';
 
+/** One repository's commit from a batch. A single-repo workspace has exactly one. */
+export interface RepoCommit {
+  repo: string;
+  sha: string;
+}
+
 export interface BatchEvent {
   seq: number;
   batchId: string;
   at: string;
   type: BatchEventType;
   message?: string;
+  /** In a multi-repo workspace, prefixed with the repo name: `api/src/routes/deals.ts`. */
   files?: string[];
+  /** The first (or only) commit, kept for single-repo clients. */
   sha?: string;
+  commits?: RepoCommit[];
   output?: string;
 }
 
@@ -69,7 +78,14 @@ export interface BatchStatus {
   commentIds: string[];
   events: BatchEvent[];
   queueDepth: number;
-  result: { summary: string; filesChanged: string[]; sha?: string; durationMs: number } | null;
+  result: {
+    summary: string;
+    filesChanged: string[];
+    /** The first (or only) commit, kept for single-repo clients. */
+    sha?: string;
+    commits?: RepoCommit[];
+    durationMs: number;
+  } | null;
   error: { kind: string; message: string } | null;
 }
 
@@ -80,11 +96,22 @@ export interface CredentialInfo {
   validated: boolean;
 }
 
+export interface RepoHealth {
+  name: string;
+  branch: string | null;
+  head: string | null;
+  clean: boolean | null;
+}
+
 export interface Health {
   status: 'ok' | 'degraded';
   version: string;
+  /** The primary repository — the one whose dev server the reviewer is looking at. */
   repo: { branch: string | null; head: string | null; clean: boolean | null };
+  /** Every repository in the workspace, primary first. */
+  repos: RepoHealth[];
   devServer: { reachable: boolean; url: string };
+  devServers: Array<{ name: string; url: string; reachable: boolean }>;
   queue: { depth: number; running: boolean };
   /**
    * `envCredential` tells the extension whether it must collect a credential
@@ -104,7 +131,9 @@ export interface SidecarInfo {
 }
 
 export interface RevertAccepted {
+  /** The first (or only) revert commit. */
   revertSha: string;
+  commits?: RepoCommit[];
 }
 
 /**

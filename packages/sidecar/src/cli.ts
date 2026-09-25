@@ -6,9 +6,9 @@ import { join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { credentialKind, makeAgentRunner } from './agent';
 import { createAudit } from './audit';
-import { CONFIG_FILENAME, loadConfig, type Config } from './config';
+import { CONFIG_FILENAME, loadConfig, type Config, type RepoConfig } from './config';
 import { deriveKey } from './credentials';
-import { startDevServer, waitForDevServer } from './dev-server';
+import { DevServers, waitForDevServer } from './dev-server';
 import { sequencer } from './events';
 import { assertNotProduction, detectPlatform } from './guard';
 import { createHttpServer, ROUTE_PREFIX } from './http';
@@ -16,7 +16,7 @@ import { runJob, type BatchRequest } from './job';
 import { addSecret } from './log';
 import { Repo } from './repo';
 import { Store } from './store';
-import { makeVerifier } from './verify';
+import { Workspace } from './workspace';
 
 const USAGE = `tapthat-sidecar — apply TapThat comments to this repo with a coding agent
 
@@ -77,48 +77,69 @@ async function readConfig(cwd = process.cwd()): Promise<Config | null> {
  * volume, so it clones — and on later boots fast-forwards a clean tree, never
  * resetting one.
  */
-async function bootstrapRepo(config: Config, gitToken: string | null): Promise<string | null> {
-  const repo = new Repo(config.repoRoot, gitToken);
+async function bootstrapOne(repoConfig: RepoConfig, remote: string, gitToken: string | null): Promise<string | null> {
+  const { root, url, branch, name } = repoConfig;
+  const repo = new Repo(root, gitToken);
   const problem = await repo.worktreeProblem();
 
   if (problem) {
-    if (!config.repoUrl) return problem;
-    const entries = existsSync(config.repoRoot) ? await readdir(config.repoRoot) : [];
+    if (!url) return problem;
+    const entries = existsSync(root) ? await readdir(root) : [];
     if (entries.some((e) => e !== 'lost+found')) {
-      return `${config.repoRoot} is not empty and not a git checkout, so it cannot be cloned into.`;
+      return `${root} is not empty and not a git checkout, so it cannot be cloned into.`;
     }
-    console.log(`[tapthat] cloning ${config.repoUrl} (${config.branch}) into ${config.repoRoot}`);
+    console.log(`[tapthat] cloning ${name}: ${url} (${branch}) into ${root}`);
     try {
-      await mkdir(config.repoRoot, { recursive: true });
-      await Repo.clone(config.repoUrl, config.branch, config.repoRoot, gitToken);
+      await mkdir(root, { recursive: true });
+      await Repo.clone(url, branch, root, gitToken);
     } catch (err) {
       const stderr = String((err as { stderr?: string }).stderr ?? err).trim();
-      return `Could not clone ${config.repoUrl}:\n  ${stderr}\nIf the repository is private, set TAPTHAT_GIT_TOKEN.`;
+      return `Could not clone ${url}:\n  ${stderr}\nIf the repository is private, set TAPTHAT_GIT_TOKEN (it must be able to read every repo in the workspace).`;
     }
     return null;
   }
 
-  if (config.repoUrl) {
-    const skipped = await repo.fastForward(config.git.remote, config.branch).catch((err) => String(err));
-    if (skipped) console.warn(`[tapthat] ${skipped}`);
+  if (url) {
+    const skipped = await repo.fastForward(remote, branch).catch((err) => String(err));
+    if (skipped) console.warn(`[tapthat] ${name}: ${skipped}`);
+  }
+  return null;
+}
+
+/**
+ * Makes sure every repository has a checkout. On the npx and Compose paths they
+ * already do and this only checks. On a PaaS the container starts with an empty
+ * volume, so it clones — and on later boots fast-forwards a clean tree, never
+ * resetting one. `done` remembers roots already handled, because the primary
+ * is bootstrapped before its committed config names the others.
+ */
+async function bootstrapRepos(config: Config, gitToken: string | null, done: Set<string>): Promise<string | null> {
+  for (const repoConfig of config.repos) {
+    if (done.has(repoConfig.root)) continue;
+    const problem = await bootstrapOne(repoConfig, config.git.remote, gitToken);
+    if (problem) return problem;
+    done.add(repoConfig.root);
   }
   return null;
 }
 
 /** Boot checks shared by serve and run-file. Returns null when everything holds. */
 async function preflight(config: Config): Promise<string | null> {
-  const repo = new Repo(config.repoRoot);
-  const worktreeProblem = await repo.worktreeProblem();
-  if (worktreeProblem) return worktreeProblem;
+  for (const repoConfig of config.repos) {
+    const repo = new Repo(repoConfig.root);
+    const worktreeProblem = await repo.worktreeProblem();
+    if (worktreeProblem) return worktreeProblem;
 
-  // An agent editing a branch nobody is looking at is the worst silent failure
-  // in this system, so a mismatch is fatal rather than a warning.
-  const checkedOut = await repo.branch();
-  if (checkedOut !== config.branch) {
-    return (
-      `Branch mismatch: ${CONFIG_FILENAME} targets "${config.branch}" but ${config.repoRoot} has "${checkedOut}" checked out.\n` +
-      `Check out "${config.branch}", or set TAPTHAT_BRANCH=${checkedOut}.`
-    );
+    // An agent editing a branch nobody is looking at is the worst silent failure
+    // in this system, so a mismatch is fatal rather than a warning.
+    const checkedOut = await repo.branch();
+    if (checkedOut !== repoConfig.branch) {
+      const which = config.repos.length > 1 ? ` (${repoConfig.name})` : '';
+      return (
+        `Branch mismatch${which}: ${CONFIG_FILENAME} targets "${repoConfig.branch}" but ${repoConfig.root} has "${checkedOut}" checked out.\n` +
+        `Check out "${repoConfig.branch}", or set TAPTHAT_BRANCH=${checkedOut}.`
+      );
+    }
   }
   return null;
 }
@@ -131,14 +152,16 @@ async function preflight(config: Config): Promise<string | null> {
  */
 async function excludeStateDir(config: Config): Promise<void> {
   const dir = Store.defaultDir(config.repoRoot);
-  const rel = relative(config.repoRoot, dir);
-  if (rel.startsWith('..') || resolve(config.repoRoot, rel) !== resolve(dir)) return;
-  const exclude = join(config.repoRoot, '.git', 'info', 'exclude');
-  const current = await readFile(exclude, 'utf8').catch(() => '');
-  const entry = `/${rel}/`;
-  if (current.split('\n').includes(entry)) return;
-  await mkdir(join(config.repoRoot, '.git', 'info'), { recursive: true }).catch(() => {});
-  await appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}${entry}\n`).catch(() => {});
+  for (const { root } of config.repos) {
+    const rel = relative(root, dir);
+    if (rel.startsWith('..') || resolve(root, rel) !== resolve(dir)) continue;
+    const exclude = join(root, '.git', 'info', 'exclude');
+    const current = await readFile(exclude, 'utf8').catch(() => '');
+    const entry = `/${rel}/`;
+    if (current.split('\n').includes(entry)) continue;
+    await mkdir(join(root, '.git', 'info'), { recursive: true }).catch(() => {});
+    await appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}${entry}\n`).catch(() => {});
+  }
 }
 
 async function probeAgent(command: string): Promise<string | null> {
@@ -155,29 +178,45 @@ async function probeAgent(command: string): Promise<string | null> {
  * successful install. A PaaS restarts the container often, and a full `npm ci`
  * on every boot turns a restart into minutes of downtime for the reviewer.
  */
-async function installIfNeeded(config: Config): Promise<boolean> {
-  const command = config.devServer.install!;
+async function installIfNeeded(config: Config, repoConfig: RepoConfig): Promise<boolean> {
+  const command = repoConfig.devServer!.install!;
+  const root = repoConfig.root;
   const hash = createHash('sha256').update(command);
   for (const file of ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'package.json']) {
-    hash.update(await readFile(join(config.repoRoot, file)).catch(() => Buffer.alloc(0)));
+    hash.update(await readFile(join(root, file)).catch(() => Buffer.alloc(0)));
   }
   const digest = hash.digest('hex');
-  const marker = join(Store.defaultDir(config.repoRoot), 'install.sha256');
-  const installed = existsSync(join(config.repoRoot, 'node_modules'));
+  // One marker per repo; the single-repo name is kept so an upgrade does not reinstall.
+  const markerName = config.repos.length > 1 ? `install-${repoConfig.name}.sha256` : 'install.sha256';
+  const marker = join(Store.defaultDir(config.repoRoot), markerName);
+  const installed = existsSync(join(root, 'node_modules'));
   if (installed && (await readFile(marker, 'utf8').catch(() => '')) === digest) {
-    console.log('[tapthat] dependencies unchanged since the last install; skipping it');
+    console.log(`[tapthat] ${repoConfig.name}: dependencies unchanged since the last install; skipping it`);
     return true;
   }
-  console.log(`[tapthat] installing: ${command}`);
-  if ((await runShell(command, config.repoRoot)) !== 0) return false;
+  console.log(`[tapthat] ${repoConfig.name}: installing: ${command}`);
+  if ((await runShell(command, root, repoConfig.devServer!.env)) !== 0) return false;
   await mkdir(Store.defaultDir(config.repoRoot), { recursive: true });
   await writeFile(marker, digest);
   return true;
 }
 
-function runShell(command: string, cwd: string): Promise<number> {
+/** `prepare` (migrations and the like) runs on every boot; it must be idempotent. */
+async function prepareAll(config: Config): Promise<boolean> {
+  for (const r of config.repos) {
+    if (!r.devServer?.prepare) continue;
+    console.log(`[tapthat] ${r.name}: preparing: ${r.devServer.prepare}`);
+    if ((await runShell(r.devServer.prepare, r.root, r.devServer.env)) !== 0) {
+      console.error(`[tapthat] ${r.name}: "${r.devServer.prepare}" failed`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function runShell(command: string, cwd: string, env: Record<string, string> = {}): Promise<number> {
   return new Promise((done) => {
-    const child = spawn(command, { cwd, shell: true, stdio: 'inherit' });
+    const child = spawn(command, { cwd, shell: true, stdio: 'inherit', env: { ...process.env, ...env } });
     child.on('exit', (code) => done(code ?? 1));
     child.on('error', () => done(1));
   });
@@ -194,7 +233,7 @@ async function cmdRunFile(path: string): Promise<number> {
     console.error(failure);
     return 78;
   }
-  const repo = new Repo(config.repoRoot);
+  const workspace = Workspace.fromConfig(config);
 
   const batch = JSON.parse(await readFile(resolve(process.cwd(), path), 'utf8')) as BatchRequest;
   const emit = sequencer((event) => {
@@ -206,26 +245,26 @@ async function cmdRunFile(path: string): Promise<number> {
   const result = await runJob(
     batch,
     {
-      repo,
+      workspace,
       config: {
         allowDirty: config.git.allowDirty,
         git: { enabled: config.git.enabled, author: config.git.author },
         timeoutMs: config.agent.timeoutMs,
         maxCommentsPerBatch: config.agent.maxCommentsPerBatch,
+        rules: config.agent.rules,
       },
       runAgent: makeAgentRunner({
         config,
         credential: credentialFromEnv(),
         onMessage: (text) => console.log(`     ${text.split('\n')[0]!.slice(0, 120)}`),
       }),
-      verify: makeVerifier(config.verifyCommand, config.repoRoot),
     },
     emit,
   );
 
   console.log(`\nstate: ${result.state}`);
   if (result.filesChanged.length) console.log(`files: ${result.filesChanged.join(', ')}`);
-  if (result.sha) console.log(`commit: ${result.sha}`);
+  for (const c of result.commits ?? []) console.log(`commit: ${workspace.multi ? `${c.repo} ` : ''}${c.sha}`);
   if (result.summary) console.log(`summary: ${result.summary}`);
   if (result.error) console.error(`error (${result.error.kind}): ${result.error.message}`);
 
@@ -249,7 +288,8 @@ async function cmdServe(): Promise<number> {
 
   const gitToken = process.env.TAPTHAT_GIT_TOKEN ?? null;
   if (gitToken) addSecret(gitToken);
-  const bootProblem = await bootstrapRepo(config, gitToken);
+  const bootstrapped = new Set<string>();
+  const bootProblem = await bootstrapRepos(config, gitToken, bootstrapped);
   if (bootProblem) {
     console.error(bootProblem);
     return 78;
@@ -257,11 +297,16 @@ async function cmdServe(): Promise<number> {
 
   // On a PaaS the process starts outside the checkout, configured by env alone.
   // Once the clone exists, the project's own committed tapthat.config.json is
-  // the base layer, with the env still on top.
+  // the base layer, with the env still on top — and it may name more repos.
   if (!existsSync(join(process.cwd(), CONFIG_FILENAME)) && existsSync(join(config.repoRoot, CONFIG_FILENAME))) {
     const fromRepo = await readConfig(config.repoRoot);
     if (!fromRepo) return 78;
     config = fromRepo;
+    const moreProblems = await bootstrapRepos(config, gitToken, bootstrapped);
+    if (moreProblems) {
+      console.error(moreProblems);
+      return 78;
+    }
   }
 
   const failure = await preflight(config);
@@ -271,7 +316,8 @@ async function cmdServe(): Promise<number> {
   }
 
   await excludeStateDir(config);
-  const repo = new Repo(config.repoRoot, gitToken);
+  const workspace = Workspace.fromConfig(config, gitToken);
+  const repo = workspace.primary.repo;
   const store = await Store.open(Store.defaultPath(config.repoRoot));
   const audit = createAudit(join(Store.defaultDir(config.repoRoot), 'audit.log'));
   const encryptionKey = deriveKey(process.env.TAPTHAT_ENCRYPTION_KEY);
@@ -287,16 +333,22 @@ async function cmdServe(): Promise<number> {
     );
   }
 
-  if (config.devServer.install && !(await installIfNeeded(config))) {
-    console.error(`[tapthat] "${config.devServer.install}" failed; the dev server cannot start without it.`);
-    return 1;
+  for (const r of config.repos) {
+    if (r.devServer?.install && !(await installIfNeeded(config, r))) {
+      console.error(`[tapthat] ${r.name}: "${r.devServer.install}" failed; its dev server cannot start without it.`);
+      return 1;
+    }
   }
+  if (!(await prepareAll(config))) return 1;
 
-  let dev: ReturnType<typeof startDevServer> | null = null;
-  if (config.devServer.start && config.devServer.command) {
-    console.log(`[tapthat] starting dev server: ${config.devServer.command}`);
-    dev = startDevServer(config.devServer.command, config.repoRoot, config.devServerUrl);
-  }
+  const servers = new DevServers(
+    config.devServer.start
+      ? config.repos
+          .filter((r) => r.devServer?.command)
+          .map((r) => ({ name: r.name, command: r.devServer!.command!, cwd: r.root, url: r.devServer!.url, env: r.devServer!.env }))
+      : [],
+  );
+  servers.startAll();
 
   const server = createHttpServer({
     config,
@@ -308,14 +360,16 @@ async function cmdServe(): Promise<number> {
     version: VERSION,
     agentVersion,
     audit,
+    workspace,
   });
 
   // Listen before the dev server is ready: a PaaS health check on the sidecar
   // must pass while a cold `next dev` is still compiling.
   await new Promise<void>((done) => server.listen(config.port, config.host, done));
-  if (dev) {
-    const ready = await waitForDevServer(config.devServerUrl, config.devServer.readyTimeoutMs);
-    if (!ready) console.warn(`[tapthat] dev server did not answer at ${config.devServerUrl} yet; continuing`);
+  for (const r of config.repos) {
+    if (!servers.isRunning(r.name)) continue;
+    const ready = await waitForDevServer(r.devServer!.url, config.devServer.readyTimeoutMs);
+    if (!ready) console.warn(`[tapthat] ${r.name} dev server did not answer at ${r.devServer!.url} yet; continuing`);
   }
 
   const platform = detectPlatform(process.env);
@@ -327,7 +381,10 @@ async function cmdServe(): Promise<number> {
   const sidecarUrl = config.proxy.enabled ? `${publicBase}${ROUTE_PREFIX}` : publicBase;
   console.log('');
   console.log(`  TapThat sidecar ready on ${config.host}:${config.port}`);
-  console.log(`  repo    ${config.repoRoot} @ ${config.branch} (${await repo.head()})`);
+  for (const e of workspace.entries) {
+    const label = workspace.multi ? `repo    ${e.name.padEnd(8)}` : 'repo    ';
+    console.log(`  ${label}${e.repo.root} @ ${e.config?.branch ?? config.branch} (${await e.repo.head()})`);
+  }
   console.log(`  agent   ${config.agent.command} ${agentVersion ?? '(not found)'} [${config.agent.allowedTools}]`);
   console.log(`  proxy   ${config.proxy.enabled ? `on → ${config.proxy.target ?? config.devServerUrl}` : 'off'}`);
   console.log(`  push    ${config.git.push ? `on → ${config.git.remote}/${config.branch}` : 'off'}`);
@@ -345,7 +402,7 @@ async function cmdServe(): Promise<number> {
   console.log('');
 
   const shutdown = () => {
-    dev?.stop();
+    void servers.stopAll();
     server.close(() => {
       void store.flush().then(() => process.exit(0));
     });

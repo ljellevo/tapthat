@@ -74,7 +74,8 @@ export function makeAgentRunner(opts: RunAgentOptions) {
       if (credential) addSecret(credential.raw);
 
       const child = spawn(config.agent.command, buildArgs(prompt, config), {
-        cwd: config.repoRoot,
+        // The workspace root: the checkout itself, or the directory holding several.
+        cwd: config.workspaceRoot,
         env: childEnv(credential),
         stdio: ['ignore', 'pipe', 'pipe'],
         signal,

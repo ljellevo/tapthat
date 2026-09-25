@@ -7,13 +7,45 @@ import type { CommentRecord, PageContext } from './types';
  */
 export type PromptVariant = 'clipboard' | 'sidecar';
 
+/** Sidecar only: the repositories the agent can change, when there is more than one. */
+export interface WorkspaceContext {
+  repos: Array<{ name: string; path: string; description?: string | null }>;
+  /** House rules, one sentence each: which copies not to edit, what is off limits. */
+  rules: string[];
+}
+
 export interface RenderOptions {
   /** Defaults to 'clipboard' — today's behaviour is the default. */
   variant?: PromptVariant;
-  /** Sidecar only: the repo the agent is already sitting in. */
+  /** Sidecar only: the repo (or workspace directory) the agent is already sitting in. */
   repoRoot?: string;
   /** Sidecar only: echoed into the header so logs correlate with a run. */
   batchId?: string;
+  /** Sidecar only: several repositories side by side under repoRoot. */
+  workspace?: WorkspaceContext;
+}
+
+/**
+ * A change request often spans services: a page shows a field the API does not
+ * return yet. Telling the agent which repository is which, and which copies not
+ * to edit, is what lets it make both halves of the change instead of faking one.
+ */
+function workspaceSection(ws: WorkspaceContext): string {
+  const lines: string[] = [];
+  if (ws.repos.length > 1) {
+    lines.push(
+      'This workspace holds several repositories side by side. A request may need changes in more',
+      'than one of them — for example the page and the API that feeds it. Change every repository',
+      'the request needs, and nothing else.',
+      '',
+      ...ws.repos.map((r) => `- \`${r.path}/\` — **${r.name}**${r.description ? `: ${r.description}` : ''}`),
+    );
+  }
+  if (ws.rules.length) {
+    if (lines.length) lines.push('');
+    lines.push('Rules:', ...ws.rules.map((rule) => `- ${rule}`));
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -90,10 +122,13 @@ export function buildMarkdown(
   const variant = opts.variant ?? 'clipboard';
   const ordered = comments.filter((c) => !c.resolved).sort((a, b) => a.n - b.n);
 
+  const section = variant === 'sidecar' && opts.workspace ? workspaceSection(opts.workspace) : '';
+  const workspace = section ? ['', section] : [];
   const head = [
     ...header(ordered.length, page, variant, opts),
     '',
     PREAMBLES[variant],
+    ...workspace,
     '',
     '---',
     '',

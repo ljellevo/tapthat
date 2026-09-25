@@ -22,6 +22,7 @@ import { Queue } from './queue';
 import type { Repo } from './repo';
 import type { Store, StoredBatch } from './store';
 import { makeVerifier } from './verify';
+import { revertAll, Workspace } from './workspace';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 /** Keeps idle SSE connections alive through PaaS edges that drop quiet sockets. */
@@ -56,6 +57,8 @@ export interface ServerDeps {
   /** `claude --version` as probed at boot, or null when the CLI is missing. */
   agentVersion?: string | null;
   audit?: Audit;
+  /** Every repository a batch may change. Defaults to `repo` alone. */
+  workspace?: Workspace;
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -97,6 +100,12 @@ function toStatus(batch: StoredBatch, queueDepth: number): BatchStatus {
 
 export function createHttpServer(deps: ServerDeps): Server {
   const { config, repo, store } = deps;
+  const ws =
+    deps.workspace ??
+    new Workspace(repo.root, [
+      { name: config.repos[0]?.name ?? 'repo', repo, verify: makeVerifier(config.verifyCommand, config.repoRoot) },
+    ]);
+  const branchOf = (name: string) => ws.get(name)?.config?.branch ?? config.branch;
   const audit: Audit = deps.audit ?? (() => {});
   const queue = new Queue();
   const proxy = config.proxy.enabled ? createProxy(config.proxy.target ?? config.devServerUrl) : null;
@@ -215,16 +224,31 @@ export function createHttpServer(deps: ServerDeps): Server {
 
   async function handleApi(req: IncomingMessage, res: ServerResponse, path: string, url: URL): Promise<void> {
     if (path === '/healthz' && req.method === 'GET') {
-      const status = await repo.status().catch(() => null);
+      const repos = await Promise.all(
+        ws.entries.map(async (e) => {
+          const status = await e.repo.status().catch(() => null);
+          return {
+            name: e.name,
+            branch: await e.repo.branch().catch(() => null),
+            head: await e.repo.head().catch(() => null),
+            clean: status ? status.dirty.length === 0 && status.untracked.length === 0 : null,
+          };
+        }),
+      );
+      const servers = ws.entries
+        .map((e) => ({ name: e.name, url: e === ws.primary ? config.devServerUrl : e.config?.devServer?.url }))
+        .filter((s): s is { name: string; url: string } => !!s.url);
+      const devServers = await Promise.all(
+        servers.map(async (s) => ({ ...s, reachable: await reachable(s.url) })),
+      );
+      const { name: _name, ...primary } = repos[0]!;
       json(res, 200, {
         status: config.killSwitch ? 'degraded' : 'ok',
         version: deps.version,
-        repo: {
-          branch: await repo.branch().catch(() => null),
-          head: await repo.head().catch(() => null),
-          clean: status ? status.dirty.length === 0 && status.untracked.length === 0 : null,
-        },
-        devServer: { reachable: await devServerReachable(), url: config.devServerUrl },
+        repo: primary,
+        repos,
+        devServer: { reachable: devServers[0]?.reachable ?? false, url: config.devServerUrl },
+        devServers,
         queue: { depth: queue.depth(config.branch), running: queue.isRunning(config.branch) },
         agent: { cliVersion: deps.agentVersion ?? null, envCredential: !!deps.envCredential },
         killSwitch: config.killSwitch,
@@ -441,25 +465,25 @@ export function createHttpServer(deps: ServerDeps): Server {
         const outcome = await runJob(
           batch,
           {
-            repo,
+            workspace: ws,
             config: {
               allowDirty: config.git.allowDirty,
               git: { enabled: config.git.enabled, author: config.git.author },
               timeoutMs: config.agent.timeoutMs,
               maxCommentsPerBatch: config.agent.maxCommentsPerBatch,
+              rules: config.agent.rules,
             },
             runAgent: makeAgentRunner({
               config,
               credential,
               onMessage: (text) => emit({ batchId: record.batchId, type: 'agent-message', message: text.slice(0, 500) }),
             }),
-            verify: makeVerifier(config.verifyCommand, config.repoRoot),
           },
           emit,
         );
         // Still inside the queue slot: a push racing the next job's commit would
         // push a half-finished history.
-        if (outcome.sha && config.git.push) await push();
+        if (outcome.commits?.length && config.git.push) await push(outcome.commits.map((c) => c.repo));
         return outcome;
       });
 
@@ -470,6 +494,7 @@ export function createHttpServer(deps: ServerDeps): Server {
         summary: result.summary ?? '',
         filesChanged: result.filesChanged,
         sha: result.sha,
+        commits: result.commits,
         durationMs: Date.now() - started,
       };
       current.error = result.error ?? null;
@@ -493,13 +518,17 @@ export function createHttpServer(deps: ServerDeps): Server {
     });
     finishStreams(record.batchId);
 
-    async function push(): Promise<void> {
-      try {
-        await repo.push(config.git.remote, config.branch);
-        emit({ batchId: record.batchId, type: 'pushed', message: `${config.git.remote}/${config.branch}` });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        emit({ batchId: record.batchId, type: 'push-failed', message });
+    async function push(names: string[]): Promise<void> {
+      for (const name of names) {
+        const entry = ws.get(name) ?? ws.primary;
+        const target = `${ws.multi ? `${name}: ` : ''}${config.git.remote}/${branchOf(name)}`;
+        try {
+          await entry.repo.push(config.git.remote, branchOf(name));
+          emit({ batchId: record.batchId, type: 'pushed', message: target });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          emit({ batchId: record.batchId, type: 'push-failed', message: `${target}: ${message}` });
+        }
       }
     }
   }
@@ -511,7 +540,8 @@ export function createHttpServer(deps: ServerDeps): Server {
       return;
     }
     const sha = batch.result?.sha;
-    if (!sha || batch.state === 'reverted') {
+    const commits = batch.result?.commits ?? (sha ? [{ repo: ws.primary.name, sha }] : []);
+    if (!commits.length || batch.state === 'reverted') {
       json(res, 409, {
         error: 'nothing_to_revert',
         message: batch.state === 'reverted' ? 'This batch has already been undone.' : 'This batch produced no commit.',
@@ -522,43 +552,39 @@ export function createHttpServer(deps: ServerDeps): Server {
     // A revert is a git operation on the shared tree, so it takes the same queue
     // slot as a job rather than racing one.
     const outcome = await queue.run(config.branch, async () => {
-      if (!(await repo.isClean())) return { kind: 'dirty' as const };
-      const reverted = await repo.revert(sha, config.git.author);
-      if (reverted.ok && config.git.push) {
-        await repo.push(config.git.remote, config.branch).catch(() => {});
+      const reverted = await revertAll(ws, commits, config.git.author);
+      if (reverted.ok && config.git.push && config.git.mode === 'commit') {
+        for (const c of reverted.commits) {
+          await (ws.get(c.repo) ?? ws.primary).repo.push(config.git.remote, branchOf(c.repo)).catch(() => {});
+        }
       }
-      return { kind: 'done' as const, reverted };
+      return reverted;
     });
 
-    if (outcome.kind === 'dirty') {
-      json(res, 409, { error: 'dirty', message: 'The working tree has uncommitted changes; undo refused.' });
-      return;
-    }
-    if (!outcome.reverted.ok) {
-      const conflicted = outcome.reverted.conflicts.length > 0;
-      json(res, 409, {
-        error: conflicted ? 'conflict' : 'revert_failed',
-        message: conflicted
-          ? 'A later change touched the same lines, so this batch cannot be undone on its own.'
-          : `git could not revert this batch: ${outcome.reverted.message}`,
-        conflicts: outcome.reverted.conflicts,
-      });
+    if (!outcome.ok) {
+      const messages = {
+        dirty: outcome.message,
+        conflict: `A later change touched the same lines${ws.multi ? ` in ${outcome.repo}` : ''}, so this batch cannot be undone on its own.`,
+        revert_failed: `git could not revert this batch${ws.multi ? ` in ${outcome.repo}` : ''}: ${outcome.message}`,
+      };
+      json(res, 409, { error: outcome.kind, message: messages[outcome.kind], conflicts: outcome.conflicts });
       return;
     }
 
+    const revertSha = outcome.commits[0]!.sha;
     const current = store.getBatch(batchId)!;
     current.state = 'reverted';
     store.putBatch(current);
-    appendEvent(batchId, { type: 'reverted', sha: outcome.reverted.sha });
-    audit('batch.reverted', { batchId, sha, revertSha: outcome.reverted.sha });
-    json(res, 202, { revertSha: outcome.reverted.sha } satisfies RevertAccepted);
+    appendEvent(batchId, { type: 'reverted', sha: revertSha, commits: outcome.commits });
+    audit('batch.reverted', { batchId, commits, reverts: outcome.commits });
+    json(res, 202, { revertSha, commits: outcome.commits } satisfies RevertAccepted);
   }
 
-  async function devServerReachable(): Promise<boolean> {
+  async function reachable(target: string): Promise<boolean> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 1500);
-      await fetch(config.devServerUrl, { signal: controller.signal });
+      await fetch(target, { signal: controller.signal });
       clearTimeout(timer);
       return true;
     } catch {

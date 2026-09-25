@@ -210,6 +210,46 @@ export class Repo {
     return new Repo(dest, token);
   }
 
+  /**
+   * The first half of an all-or-nothing undo across repositories: the revert is
+   * applied to the index but not committed, so it can still be abandoned if
+   * another repository's half conflicts.
+   */
+  async stageRevert(sha: string): Promise<{ ok: true } | { ok: false; conflicts: string[]; message: string }> {
+    try {
+      await this.git('revert', '--no-commit', sha);
+      return { ok: true };
+    } catch (err) {
+      const unmerged = (await this.git('diff', '--name-only', '--diff-filter=U').catch(() => ''))
+        .split('\n')
+        .filter(Boolean);
+      await this.git('revert', '--abort').catch(() => {});
+      return { ok: false, conflicts: unmerged, message: String((err as { stderr?: string }).stderr ?? err).trim() };
+    }
+  }
+
+  /** Drops a staged revert, leaving the tree exactly as it was. */
+  async abandonRevert(): Promise<void> {
+    await this.git('revert', '--abort');
+  }
+
+  /** Commits a staged revert with git's own message shape. Returns the new sha. */
+  async commitRevert(sha: string, author: { name: string; email: string }): Promise<string> {
+    const subject = await this.git('log', '-1', '--format=%s', sha);
+    const full = await this.git('rev-parse', sha);
+    await this.git(
+      '-c',
+      `user.name=${author.name}`,
+      '-c',
+      `user.email=${author.email}`,
+      'commit',
+      '--no-verify',
+      '-m',
+      `Revert "${subject}"\n\nThis reverts commit ${full}.`,
+    );
+    return this.head();
+  }
+
   async revert(
     sha: string,
     author: { name: string; email: string },
