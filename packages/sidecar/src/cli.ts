@@ -15,6 +15,7 @@ import { createHttpServer, ROUTE_PREFIX } from './http';
 import { runJob, type BatchRequest } from './job';
 import { addSecret } from './log';
 import { Repo } from './repo';
+import { makeSnapshotHooks } from './snapshot';
 import { Store } from './store';
 import { Workspace } from './workspace';
 
@@ -356,9 +357,27 @@ async function cmdServe(): Promise<number> {
   );
   servers.startAll();
 
+  const snapshot = config.session.snapshot;
+  const sessionHooks = snapshot
+    ? makeSnapshotHooks({
+        snapshot,
+        dir: join(Store.defaultDir(config.repoRoot), 'snapshots'),
+        stopServer: (name) => servers.stop(name),
+        startServer: (name) => servers.start(name),
+        prepare: async () => {
+          if (!(await prepareAll(config))) throw new Error('A prepare command failed after the data was copied; see the service log.');
+        },
+        onStart: config.session.onStart,
+        runCommand: async (command) => {
+          if ((await runShell(command, config.workspaceRoot)) !== 0) throw new Error(`"${command}" failed`);
+        },
+      })
+    : undefined;
+
   const server = createHttpServer({
     config,
     repo,
+    sessionHooks,
     store,
     encryptionKey,
     token,

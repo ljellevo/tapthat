@@ -33,7 +33,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node test/run-safety.mjs && node test/run-http.mjs && node test/run-lifecycle.mjs && node test/run-workspace.mjs && node test/run-session.mjs",
+    "test": "node test/run-safety.mjs && node test/run-http.mjs && node test/run-lifecycle.mjs && node test/run-workspace.mjs && node test/run-session.mjs && node test/run-snapshot.mjs",
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {

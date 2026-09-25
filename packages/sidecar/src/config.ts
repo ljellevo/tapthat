@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { detectPlatform } from './guard';
+import type { SnapshotConfig } from './snapshot';
 
 export interface RepoDevServer {
   /** Null when the dev server is started by someone else (npx, Compose). */
@@ -94,6 +95,11 @@ export interface Config {
   /** Let the sidecar own the dev server's lifecycle (standalone/PaaS shape). */
   devServer: { start: boolean; command: string | null; install: string | null; readyTimeoutMs: number };
   limits: { batchesPerHour: number; batchesPerHourPerCredential: number };
+  /**
+   * Session mode's data half. With a snapshot, Start session copies dev's
+   * databases into the playground and Discard restores that copy.
+   */
+  session: { snapshot: SnapshotConfig | null; onStart: string[] };
   /** Where the checkouts live side by side; the agent's working directory. */
   workspaceRoot: string;
   /** Primary first. Always at least one. */
@@ -112,7 +118,11 @@ interface RawRepo {
   devServer?: { command?: string; url?: string; install?: string; prepare?: string; env?: Record<string, string> };
 }
 
-interface RawFile extends Partial<Omit<Config, 'repos' | 'mirrors' | 'workspaceRoot'>> {
+interface RawFile extends Partial<Omit<Config, 'repos' | 'mirrors' | 'workspaceRoot' | 'session'>> {
+  session?: {
+    snapshot?: { source?: string; target?: string; exclude?: string[]; stopServers?: string[]; redis?: string };
+    onStart?: string[];
+  };
   workspace?: { root?: string };
   repos?: RawRepo[];
   mirrors?: Array<{ from?: string; to?: string[]; alsoUsedBy?: string[] }>;
@@ -169,6 +179,7 @@ export function defaults(cwd: string): Config {
     proxy: { enabled: false, target: null },
     devServer: { start: false, command: null, install: null, readyTimeoutMs: 120_000 },
     limits: { batchesPerHour: 60, batchesPerHourPerCredential: 20 },
+    session: { snapshot: null, onStart: [] },
     workspaceRoot: cwd,
     repos: [],
     mirrors: [],
@@ -214,7 +225,7 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
     }
   }
 
-  const { repos: rawRepos, mirrors: rawMirrors, workspace: rawWorkspace, ...flat } = fromFile;
+  const { repos: rawRepos, mirrors: rawMirrors, workspace: rawWorkspace, session: rawSession, ...flat } = fromFile;
   const config: Config = {
     ...base,
     ...flat,
@@ -256,6 +267,7 @@ export async function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.e
 
   config.repoRoot = isAbsolute(config.repoRoot) ? config.repoRoot : resolve(cwd, config.repoRoot);
   buildWorkspace(config, { rawRepos, rawMirrors, rawWorkspace }, cwd, env, problems);
+  buildSession(config, rawSession, env, problems);
 
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
     problems.push(`port: ${config.port} is not a valid port (override with TAPTHAT_PORT)`);
@@ -459,4 +471,42 @@ function buildWorkspace(
     }
     return [{ from, to: to as Array<{ repo: string; path: string }>, alsoUsedBy: m.alsoUsedBy ?? [] }];
   });
+}
+
+/** Connection URLs may come from the environment, so secrets stay out of the committed file. */
+function buildSession(config: Config, raw: RawFile['session'], env: NodeJS.ProcessEnv, problems: string[]): void {
+  const missing = new Set<string>();
+  const fill = (v: string | undefined) => (v === undefined ? undefined : interpolate(v, env, missing));
+  const source = env.TAPTHAT_SNAPSHOT_SOURCE ?? fill(raw?.snapshot?.source);
+  const target = env.TAPTHAT_SNAPSHOT_TARGET ?? fill(raw?.snapshot?.target);
+  const redis = env.TAPTHAT_SNAPSHOT_REDIS ?? fill(raw?.snapshot?.redis);
+  config.session = {
+    snapshot:
+      source && target
+        ? {
+            source,
+            target,
+            exclude: raw?.snapshot?.exclude ?? [],
+            stopServers: raw?.snapshot?.stopServers ?? [],
+            redisUrl: redis || null,
+          }
+        : null,
+    onStart: raw?.onStart ?? [],
+  };
+  if (!config.session.snapshot) return;
+
+  if (missing.size) {
+    problems.push(`session.snapshot: ${[...missing].map((n) => `\${${n}}`).join(', ')} not set in the environment`);
+  }
+  if ((source && !target) || (!source && target)) {
+    problems.push('session.snapshot: needs both a source and a target (TAPTHAT_SNAPSHOT_SOURCE, TAPTHAT_SNAPSHOT_TARGET)');
+  }
+  for (const [name, url] of [['source', source], ['target', target]] as const) {
+    if (!url || !/^postgres(ql)?:\/\//.test(url)) problems.push(`session.snapshot.${name}: expected a postgres:// URL`);
+  }
+  if (source && source === target) problems.push('session.snapshot: source and target are the same database server');
+  if (config.git.mode !== 'session') problems.push('session.snapshot: only used with git.mode "session"');
+  const names = new Set(config.repos.map((r) => r.name));
+  const unknown = config.session.snapshot.stopServers.filter((n) => !names.has(n));
+  if (unknown.length) problems.push(`session.snapshot.stopServers: unknown repo ${unknown.map((u) => `"${u}"`).join(', ')}`);
 }

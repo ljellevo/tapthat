@@ -31,9 +31,19 @@ RUN node packages/sidecar/build.mjs
 FROM node:${NODE_VERSION}-slim
 
 ARG CLAUDE_CODE_VERSION=latest
+# Start session copies the dev database with pg_dump, which refuses servers
+# newer than itself: match this to the Postgres your dev environment runs.
+ARG PG_MAJOR=17
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates tini openssh-client \
+ && apt-get install -y --no-install-recommends git ca-certificates tini openssh-client curl \
+ && install -d /usr/share/postgresql-common/pgdg \
+ && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && . /etc/os-release \
+ && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends "postgresql-client-${PG_MAJOR}" \
+ && apt-get purge -y curl && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && npm cache clean --force \
