@@ -30,7 +30,7 @@ const USAGE = `tapthat-server — apply TapThat comments to this repo with a cod
 
 Development tool only. serve and run-file require TAPTHAT_ENABLE=1.`;
 
-const VERSION = '0.1.2';
+const VERSION = '0.2.0';
 const SECRETS_FILE = join('.tapthat', 'secrets.env');
 
 const execFileP = promisify(execFile);
