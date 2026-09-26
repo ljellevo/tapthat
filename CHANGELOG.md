@@ -1,5 +1,16 @@
 # Changelog
 
+## tapthat-server 0.1.1
+
+- Published with npm trusted publishing: no token, with provenance from this repository's
+  `server-release.yml`.
+- The image is published as its own job, so npm and ghcr no longer block each other.
+
+## tapthat-server 0.1.0
+
+The first npm release, published by hand to bootstrap trusted publishing. It is the same
+code as `server-v0.1.0`.
+
 ## Unreleased: TapThat Full
 
 The online half of TapThat. The extension gains an **Apply to dev** button once a
