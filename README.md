@@ -207,10 +207,15 @@ builder.
 
 ### Releasing
 
-**The sidecar** is released by pushing a tag: `git tag server-v0.2.0 && git push origin
-server-v0.2.0` publishes `tapthat-server` to npm (needs the `NPM_TOKEN` secret) and
-`ghcr.io/ljellevo/tapthat-server` to ghcr. Make the ghcr package public once, after the
-first release, so Railway and Compose can pull it without credentials.
+**The server** is released by pushing a tag: `git tag server-v0.2.0 && git push origin
+server-v0.2.0` publishes `tapthat-server` to npm and `ghcr.io/ljellevo/tapthat-server` to
+ghcr, as two independent jobs.
+
+npm uses [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no token is
+stored anywhere. The package's settings on npmjs.com (*Settings → Trusted publisher*) name
+`ljellevo/tapthat` and the workflow `server-release.yml`, with **Allow npm publish**
+ticked. A version already on npm is skipped rather than failing the run. The ghcr package
+is public, so Railway and Compose pull it without credentials.
 
 **The extension** releases are automatic. Every push to `main` that touches the extension builds, tests,
 packages and publishes a release, bumping the hotfix number (`major.minor.hotfix`) from the

@@ -2,7 +2,13 @@ name: Server release
 
 # Publishes tapthat-server to npm and ghcr.io/<owner>/tapthat-server.
 # Cut a release by pushing a tag:  git tag server-v0.2.0 && git push origin server-v0.2.0
-# Needs the NPM_TOKEN repository secret; ghcr uses the workflow's own token.
+#
+# npm uses trusted publishing: no token. The package's npm settings name this
+# repository and this workflow file (server-release.yml) as its publisher, and
+# npm accepts this job's OIDC identity instead. ghcr uses the workflow's own token.
+#
+# npm and the image are separate jobs, so a failure in one never holds back the
+# other, and each can be re-run on its own.
 
 on:
   push:
@@ -10,13 +16,12 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  # npm provenance: the package is signed with this workflow's OIDC identity.
-  id-token: write
 
 jobs:
-  release:
+  check:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +29,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - run: npm ci
 
@@ -38,21 +42,66 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Stamp the version
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # --allow-same-version: the first release is the version already in package.json.
-          npm version "$VERSION" --no-git-tag-version --allow-same-version -w tapthat-server
-          sed -i "s/^const VERSION = '.*';/const VERSION = '$VERSION';/" packages/server/src/cli.ts
-
       - name: Typecheck, test and build
         run: npm run check -w tapthat-shared && npm run check -w tapthat-server
 
-      - name: Publish to npm
-        run: npm publish -w tapthat-server --provenance
+  npm:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Trusted publishing: npm exchanges this job's OIDC token for a
+      # short-lived publish credential, and signs provenance with it.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Trusted publishing needs Node >= 22.14 and npm >= 11.5.1.
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: npm with trusted-publishing support
+        run: npm install -g npm@latest && npm --version
+
+      - run: npm ci
+
+      - name: Stamp the version
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          # --allow-same-version: a release may be the version already in package.json.
+          npm version "$VERSION" --no-git-tag-version --allow-same-version -w tapthat-server
+          sed -i "s/^const VERSION = '.*';/const VERSION = '$VERSION';/" packages/server/src/cli.ts
+
+      - run: npm run build -w tapthat-server
+
+      - name: Publish to npm
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          # A version that is already on npm (e.g. the hand-published first
+          # release that trusted publishing needs to exist) is skipped, not an error.
+          if npm view "tapthat-server@$VERSION" version >/dev/null 2>&1; then
+            echo "tapthat-server@$VERSION is already on npm; skipping."
+            exit 0
+          fi
+          npm publish -w tapthat-server --provenance --access public
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp the version
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: sed -i "s/^const VERSION = '.*';/const VERSION = '$VERSION';/" packages/server/src/cli.ts
 
       - uses: docker/setup-buildx-action@v3
 
@@ -69,5 +118,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/tapthat-server:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/tapthat-server:${{ needs.check.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/tapthat-server:latest
