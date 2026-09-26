@@ -29,6 +29,8 @@ so the playground starts from what `dev` looks like.
 - **Sessions are polled, not streamed.** A session step takes minutes, not seconds, and the
   extension already polls `/healthz`; SSE would add a second token scheme for no visible
   gain.
+  *(Update, 0.2.0: in practice the source is `dev`'s superuser. `pg_read_all_data` does not
+  grant `CONNECT`, which Dealroom revokes from `PUBLIC` on every database.)*
 
 ## Consequences
 

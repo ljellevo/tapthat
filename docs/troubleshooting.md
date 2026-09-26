@@ -24,10 +24,13 @@ testing TapThat Full against a real Next.js app on a Railway-shaped container.
 | Apply says "Start a session first" | The sidecar is in `git.mode: "session"` and no session is active | Press **Start session** in the panel |
 | Start session fails: `pg_dump: error: aborting because of server version mismatch` | The image's client is older than `dev`'s Postgres | Rebuild with `--build-arg PG_MAJOR=<server major>` |
 | "The source user cannot read role passwords" | The copy's login lacks `pg_read_all_data` | `GRANT pg_read_all_data TO <role>`; data rooms can't log in until then |
+| Start session fails: `permission denied for database "…"`, `User does not have CONNECT privilege` | The copy's login is a `pg_read_all_data` role, and `CONNECT` is revoked from `PUBLIC` | Copy as `dev`'s superuser (playground.md, "One-time setup in dev") |
+| Start session fails: `unexpected spaces found in "secret(32, …"` | Railway stored its `secret()` template as the literal Postgres password, which makes the password a public constant | Run `npx tapthat-server install`: it changes the password inside Postgres and in the variable |
+| Redis crashes on start (`REDIS_PASSWORD`, then `Permission denied` on its volume) | Redis was created outside Railway's template: no connection variables, and a root-owned volume | `npx tapthat-server install` sets the template's variables and `RAILWAY_RUN_UID=0` |
 | Data rooms fail to open after a copy | The playground's `TENANCY_MASTER_KEY` or database passwords differ from `dev`'s | Set them to `dev`'s values; see playground.md, "Values that must match dev" |
-| Commit to dev: "Someone changed the same lines on dev" | `dev` moved and conflicts with the session | Nothing was sent. A developer merges by hand, then Discard and start again |
+| Commit to dev: "Someone changed the same lines on dev" | `dev` moved and conflicts with the session | Nothing was sent. A developer merges by hand, then Cancel session and start again |
 | Commit to dev: "has changes that were never committed" | A batch's build broke and left edits | Undo it, or apply a fix, then Commit |
-| The session shows "The sidecar restarted while…" | A restart landed mid-Start/Commit/Discard | Discard, then Start again |
+| The session shows "The sidecar restarted while…" | A restart landed mid-Start/Commit/Cancel | Cancel session, then Start again |
 | Previews of documents are missing in the playground | Files live on `storage`'s volume, which the copy doesn't include | Known limitation; metadata and lists are correct |
 
 ## The dev server

@@ -14,13 +14,14 @@ export interface PanelOptions {
   onClear(): void;
   onClose(): void;
   onHelp?(): void;
+  onSettings?(): void;
   /** Full mode only. */
   onApply?(): void;
   onBatchAction?(action: BatchAction, batchId: string): void;
   onSessionAction?(action: SessionAction): void;
 }
 
-export type SessionAction = 'start' | 'commit' | 'discard' | 'dismiss';
+export type SessionAction = 'start' | 'commit' | 'discard';
 
 /**
  * The playground session strip (git.mode "session"). Like BatchView, a view
@@ -78,6 +79,9 @@ let batchEl: HTMLDivElement | null = null;
 let sessionEl: HTMLDivElement | null = null;
 /** Session mode without an active session: Apply waits for Start session. */
 let applyAllowed = true;
+let fullMode = false;
+/** Full mode only: the sidecar is down or paused, so Export comes back as the way out. */
+let exportFallback = false;
 let clearBtn: HTMLButtonElement | null = null;
 let resolvedBtn: HTMLButtonElement | null = null;
 let teardownDrag: (() => void) | null = null;
@@ -119,6 +123,12 @@ export async function mount(opts: PanelOptions) {
   help.addEventListener('click', () => opts.onHelp?.());
   help.addEventListener('pointerdown', (e) => e.stopPropagation());
   head.appendChild(help);
+  const settings = el('button', 'panel-help panel-settings', '⚙');
+  settings.title = 'Settings';
+  settings.setAttribute('aria-label', 'Settings');
+  settings.addEventListener('click', () => opts.onSettings?.());
+  settings.addEventListener('pointerdown', (e) => e.stopPropagation());
+  head.appendChild(settings);
   const close = el('button', undefined, '✕');
   close.title = 'Exit annotation mode (Esc)';
   close.addEventListener('click', () => opts.onClose());
@@ -289,17 +299,13 @@ function buildItem(record: CommentRecord): HTMLDivElement {
 }
 
 /**
- * Light ↔ Full. In Full, Apply is the primary action and Export demotes to a
- * ghost button — but stays, because the clipboard is the fallback whenever the
- * sidecar is down.
+ * Light ↔ Full. In Full, Apply is the primary action and Export is hidden —
+ * it only comes back, as a ghost button, while the sidecar is down or paused.
  */
 export function setMode(mode: Mode) {
-  if (!applyBtn || !exportBtn) return;
-  const full = mode === 'full';
-  applyBtn.hidden = !full || !applyAllowed;
-  exportBtn.classList.toggle('primary', !full);
-  exportBtn.classList.toggle('ghost', full);
-  if (!full) {
+  fullMode = mode === 'full';
+  syncFootButtons();
+  if (!fullMode) {
     if (statusEl) statusEl.hidden = true;
     if (batchEl) batchEl.hidden = true;
     if (sessionEl) sessionEl.hidden = true;
@@ -309,10 +315,21 @@ export function setMode(mode: Mode) {
 /** Hides Apply while a playground has no active session; Start session sits in the strip. */
 export function setApplyAllowed(allowed: boolean) {
   applyAllowed = allowed;
-  if (applyBtn && exportBtn) {
-    const full = exportBtn.classList.contains('ghost');
-    applyBtn.hidden = !full || !allowed;
-  }
+  syncFootButtons();
+}
+
+/** Full mode: show Export while the clipboard is the only way out. */
+export function setExportFallback(show: boolean) {
+  exportFallback = show;
+  syncFootButtons();
+}
+
+function syncFootButtons() {
+  if (!applyBtn || !exportBtn) return;
+  applyBtn.hidden = !fullMode || !applyAllowed;
+  exportBtn.hidden = fullMode && !exportFallback;
+  exportBtn.classList.toggle('primary', !fullMode);
+  exportBtn.classList.toggle('ghost', fullMode);
 }
 
 let armed: { action: SessionAction; timer: number } | null = null;
@@ -324,14 +341,9 @@ export function setSession(view: SessionView | null) {
   if (!view) return;
   sessionEl.className = `session session-${view.tone}`;
 
+  // No close button: in a playground the session strip is always the thing to act on.
   const head = el('div', 'session-head');
   head.appendChild(el('span', 'session-title', view.title));
-  if (view.actions.some((a) => a.action === 'dismiss')) {
-    const close = el('button', 'item-act batch-close', '✕');
-    close.title = 'Dismiss';
-    close.addEventListener('click', () => options?.onSessionAction?.('dismiss'));
-    head.appendChild(close);
-  }
   sessionEl.appendChild(head);
   if (view.detail) sessionEl.appendChild(el('div', 'session-detail', view.detail));
   if (view.progress && view.progress.steps > 0) {
@@ -343,19 +355,24 @@ export function setSession(view: SessionView | null) {
   }
   if (view.lines?.length) sessionEl.appendChild(el('div', 'session-lines', view.lines.join('\n')));
 
-  const buttons = view.actions.filter((a) => a.action !== 'dismiss');
+  const buttons = view.actions;
   if (!buttons.length) return;
   const row = el('div', 'row session-actions');
   for (const spec of buttons) {
     const isArmed = armed?.action === spec.action;
     const btn = el(
       'button',
-      [spec.primary ? 'primary' : 'ghost', isArmed ? (spec.primary ? 'armed' : 'danger-armed') : ''].join(' ').trim(),
+      [
+        spec.primary ? 'primary' : 'ghost',
+        // Commit ships to the shared dev environment; it must not read as another Apply.
+        spec.action === 'commit' ? 'commit' : '',
+        isArmed ? (spec.primary ? 'armed' : 'danger-armed') : '',
+      ].filter(Boolean).join(' '),
       isArmed && spec.confirm ? spec.confirm : spec.label,
     );
     btn.disabled = !!spec.disabled;
     btn.addEventListener('click', () => {
-      // Commit and Discard are not undoable from here, so they take two clicks,
+      // Commit and Cancel session are not undoable from here, so they take two clicks,
       // the same way Clear all does.
       if (spec.confirm && armed?.action !== spec.action) {
         if (armed) clearTimeout(armed.timer);
@@ -465,6 +482,8 @@ export function destroy() {
   countEl = null;
   exportBtn = null;
   applyBtn = null;
+  fullMode = false;
+  exportFallback = false;
   statusEl = null;
   batchEl = null;
   sessionEl = null;

@@ -28,10 +28,15 @@ Pick the one that matches where your dev server runs:
   dev site has a public URL that reviewers open.
 - **[D. A playground environment](docs/playground.md)**: reviewers change several services
   at once (say the app *and* its API) in a separate environment, then send everything to
-  your `dev` branch with one **Commit to dev**. It builds on C; follow the playground
-  guide.
+  your `dev` branch with one **Commit to dev**. On Railway it is one command, run in a
+  folder linked to your project:
+  ```sh
+  npx tapthat-server install
+  ```
+  It asks three things (platform, dev branch, site), shows everything it will set up,
+  and does it after one confirmation. See [the playground guide](docs/playground.md#the-installer).
 
-What you need for all three:
+What you need for all of them:
 
 - The app's code in **git**, and a branch for the agent to commit to, such as `dev`.
   **Never `main`.**

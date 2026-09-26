@@ -48,6 +48,9 @@ async function ensureMounted() {
     onHelp: () => {
       chrome.runtime.sendMessage({ type: 'OPEN_HELP' }).catch(() => {});
     },
+    onSettings: () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }).catch(() => {});
+    },
     onApply: () => void full.apply(),
     onBatchAction: (action, batchId) => void full.batchAction(action, batchId),
     onSessionAction: (action) => void full.sessionAction(action),

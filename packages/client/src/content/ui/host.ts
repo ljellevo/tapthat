@@ -309,6 +309,8 @@ button.danger-armed {
 
 button:disabled { opacity: 0.4; cursor: default; }
 button:disabled:hover { background: transparent; }
+/* A disabled filled button keeps its fill on hover, or its white label vanishes. */
+button.primary:disabled:hover { background: var(--av-blue); }
 
 .panel-foot {
   display: flex;
@@ -436,6 +438,16 @@ button:disabled:hover { background: transparent; }
 .session-actions { justify-content: flex-end; }
 button.armed { background: var(--av-blue-dark); }
 
+/* Commit to dev ships to the shared environment: green, bolder, never mistaken for Apply. */
+button.commit,
+button.commit:disabled,
+button.commit:disabled:hover { background: var(--av-commit); color: #fff; }
+button.commit { font-weight: 600; padding: 6px 14px; }
+button.commit::before { content: '✓ '; }
+button.commit:hover,
+button.commit.armed { background: var(--av-commit-dark); }
+button.commit.armed { box-shadow: 0 0 0 3px var(--av-ok-fill); }
+
 /* ---------- connect sheet ---------- */
 
 .sheet {
@@ -507,6 +519,8 @@ const TOKENS_LIGHT = `
   --av-danger-fill: rgba(220, 38, 38, 0.1);
   --av-ok: #15803d;
   --av-ok-fill: rgba(22, 163, 74, 0.12);
+  --av-commit: #16a34a;
+  --av-commit-dark: #15803d;
   --av-warn: #b45309;
   --av-warn-fill: rgba(217, 119, 6, 0.12);
   --av-toast: #0f172a;
@@ -527,6 +541,8 @@ const TOKENS_DARK = `
   --av-danger-fill: rgba(248, 113, 113, 0.14);
   --av-ok: #4ade80;
   --av-ok-fill: rgba(74, 222, 128, 0.14);
+  --av-commit: #16a34a;
+  --av-commit-dark: #15803d;
   --av-warn: #fbbf24;
   --av-warn-fill: rgba(251, 191, 36, 0.14);
   --av-toast: #334155;

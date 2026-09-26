@@ -114,14 +114,14 @@ export class Sessions {
     const s = this.current();
     if (!s) return;
     if (BUSY.has(s.state)) {
-      this.fail(s, `The sidecar restarted while the session was ${s.state}. Discard it and start again.`);
+      this.fail(s, `The sidecar restarted while the session was ${s.state}. Cancel the session and start again.`);
       return;
     }
     if (s.state === 'active') {
       for (const e of this.deps.workspace.entries) {
         const on = await e.repo.branch().catch(() => null);
         if (on !== s.branch) {
-          this.fail(s, `${e.name} is no longer on the session branch (${on ?? 'unknown'}). Discard the session and start again.`);
+          this.fail(s, `${e.name} is no longer on the session branch (${on ?? 'unknown'}). Cancel the session and start again.`);
           return;
         }
       }
@@ -186,7 +186,7 @@ export class Sessions {
       );
     }
     if (existing?.state === 'failed') {
-      throw new SessionError(409, 'session_failed', 'The last session failed. Discard it first, which also resets the data.');
+      throw new SessionError(409, 'session_failed', 'The last session failed. Cancel it first, which also resets the data.');
     }
 
     const id = sessionId();

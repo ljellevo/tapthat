@@ -37,11 +37,10 @@ let healthError: string | null = null;
 let trouble = false;
 let submitting = false;
 let healthTimer: number | undefined;
-/** Session mode only: the playground session, and the last Commit or Discard. */
+/** Session mode only: the playground session, and the last Commit or Cancel. */
 let session: SessionResponse | null = null;
 let sessionTimer: number | undefined;
 let sessionBusy: SessionAction | null = null;
-let dismissedOutcome: string | null = null;
 const watchers = new Map<string, () => void>();
 const modeListeners = new Set<(mode: Mode) => void>();
 
@@ -157,11 +156,6 @@ async function refreshSession(): Promise<void> {
 
 export async function sessionAction(action: SessionAction): Promise<void> {
   if (!client) return;
-  if (action === 'dismiss') {
-    dismissedOutcome = session?.last?.id ?? null;
-    render();
-    return;
-  }
   if (sessionBusy) return;
   sessionBusy = action;
   render();
@@ -471,7 +465,7 @@ function sessionView(): SessionView | null {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
   if (!s) {
-    const recent = last && last.id !== dismissedOutcome && Date.now() - Date.parse(last.at) < 30 * 60_000;
+    const recent = last && Date.now() - Date.parse(last.at) < 30 * 60_000;
     const start = { action: 'start' as const, label: sessionBusy === 'start' ? 'Starting…' : 'Start session', primary: true, disabled: !!sessionBusy };
     if (recent && last.outcome === 'committed') {
       return {
@@ -479,15 +473,15 @@ function sessionView(): SessionView | null {
         title: 'Sent to dev',
         detail: `${last.commits.map((c) => `${c.repo} ${c.sha}`).join(' · ')}${last.by ? ` · by ${last.by}` : ''}. The dev environment deploys it from here.`,
         lines: last.notices.map((n) => `⚠ ${n}`),
-        actions: [start, { action: 'dismiss', label: 'Dismiss' }],
+        actions: [start],
       };
     }
     if (recent && last.outcome === 'discarded') {
       return {
         tone: 'idle',
-        title: 'Session discarded',
+        title: 'Session cancelled',
         detail: 'The code and data are back to dev.',
-        actions: [start, { action: 'dismiss', label: 'Dismiss' }],
+        actions: [start],
       };
     }
     return {
@@ -500,7 +494,7 @@ function sessionView(): SessionView | null {
 
   const lastEvent = s.events.at(-1);
   if (SESSION_BUSY.has(s.state)) {
-    const titles: Record<string, string> = { starting: 'Starting a session…', committing: 'Sending to dev…', discarding: 'Discarding…' };
+    const titles: Record<string, string> = { starting: 'Starting a session…', committing: 'Sending to dev…', discarding: 'Cancelling the session…' };
     return {
       tone: 'busy',
       title: titles[s.state]!,
@@ -515,7 +509,7 @@ function sessionView(): SessionView | null {
       tone: 'failed',
       title: 'The session failed',
       detail: s.error ?? 'Unknown error.',
-      actions: [{ action: 'discard', label: 'Discard', confirm: 'Discard it?', disabled: !!sessionBusy }],
+      actions: [{ action: 'discard', label: 'Cancel session', confirm: 'Comments will be lost — sure?', disabled: !!sessionBusy }],
     };
   }
 
@@ -532,8 +526,8 @@ function sessionView(): SessionView | null {
     actions: [
       {
         action: 'discard',
-        label: sessionBusy === 'discard' ? 'Discarding…' : 'Discard all',
-        confirm: 'Discard all, data too?',
+        label: sessionBusy === 'discard' ? 'Cancelling…' : 'Cancel session',
+        confirm: 'Comments will be lost — sure?',
         disabled: !!sessionBusy,
       },
       {
@@ -585,6 +579,8 @@ export function render(): void {
   panel.setBatch(latest ? viewOf(latest) : null);
   const line = statusLine();
   panel.setStatusLine(line.text, line.tone);
+  // The status line promises "Export still works" in exactly these cases.
+  panel.setExportFallback(!!trouble || !!healthError || !!health?.killSwitch);
   panel.setApplyBusy(submitting || list.some((b) => !isFinished(b)));
   panel.setSession(sessionView());
   // In a playground, Apply waits for Start session.

@@ -1,0 +1,230 @@
+{
+  "services": [
+    {
+      "id": "svc-admin",
+      "name": "admin",
+      "source": {
+        "repo": "dealroom-no/admin",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "healthcheckPath": "/health"
+      },
+      "variables": {
+        "DEALROOM_API_URL": "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:3100",
+        "HOSTNAME": "::",
+        "PORT": "3400"
+      }
+    },
+    {
+      "id": "svc-api",
+      "name": "api",
+      "source": {
+        "repo": "dealroom-no/api",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "preDeployCommand": [
+          "node_modules/.bin/prisma migrate deploy --schema=shared/db-platform/prisma/schema.prisma"
+        ],
+        "healthcheckPath": "/ready",
+        "healthcheckTimeout": 120
+      },
+      "variables": {
+        "ADMIN_ORIGIN": "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}",
+        "AUTH_SERVICE_TOKEN": "${{auth.AUTH_SERVICE_TOKEN}}",
+        "AUTH_SERVICE_URL": "http://${{auth.RAILWAY_PRIVATE_DOMAIN}}:3200",
+        "LOG_LEVEL": "info",
+        "MAIL_DRIVER": "resend",
+        "MAIL_FROM": "Dealroom <onboarding@resend.dev>",
+        "NODE_ENV": "development",
+        "PAYMENT_DRIVER": "service",
+        "PAYMENT_SERVICE_TOKEN": "${{payment.PAYMENT_SERVICE_TOKEN}}",
+        "PAYMENT_SERVICE_URL": "http://${{payment.RAILWAY_PRIVATE_DOMAIN}}:3500",
+        "PLATFORM_DATABASE_URL": "postgresql://dealroom_platform:${{PLATFORM_DB_PASSWORD}}@${{postgres.PGHOST}}:${{postgres.PGPORT}}/dealroom_platform",
+        "PLATFORM_DB_PASSWORD": "<secret:PLATFORM_DB_PASSWORD>",
+        "PORT": "3100",
+        "PRODUCT_NAME": "Dealroom",
+        "REDIS_URL": "${{redis.REDIS_URL}}?family=0",
+        "RESEND_API_KEY": "${{auth.RESEND_API_KEY}}",
+        "STORAGE_DRIVER": "mock",
+        "STORAGE_SERVICE_TOKEN": "${{storage.STORAGE_SERVICE_TOKEN}}",
+        "STORAGE_SERVICE_URL": "http://${{storage.RAILWAY_PRIVATE_DOMAIN}}:3300",
+        "TENANCY_DB_HOST": "${{postgres.PGHOST}}",
+        "TENANCY_DB_PASSWORD": "<secret:TENANCY_DB_PASSWORD>",
+        "TENANCY_DB_PORT": "${{postgres.PGPORT}}",
+        "TENANCY_MAINTENANCE_URL": "postgresql://dealroom_tenancy:${{TENANCY_DB_PASSWORD}}@${{postgres.PGHOST}}:${{postgres.PGPORT}}/postgres",
+        "TENANCY_MASTER_KEY": "<secret:TENANCY_MASTER_KEY>",
+        "TRUST_PROXY_HOPS": "1",
+        "WEB_ORIGIN": "https://${{app.RAILWAY_PUBLIC_DOMAIN}}",
+        "WIPE_RECEIPT_SIGNING_KEY": "<secret:WIPE_RECEIPT_SIGNING_KEY>"
+      }
+    },
+    {
+      "id": "svc-app",
+      "name": "app",
+      "source": {
+        "repo": "dealroom-no/app",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "healthcheckPath": "/health"
+      },
+      "variables": {
+        "DEALROOM_API_URL": "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:3100",
+        "HOSTNAME": "::",
+        "PORT": "3000"
+      }
+    },
+    {
+      "id": "svc-auth",
+      "name": "auth",
+      "source": {
+        "repo": "dealroom-no/auth",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "preDeployCommand": [
+          "node_modules/.bin/prisma migrate deploy"
+        ],
+        "healthcheckPath": "/ready",
+        "healthcheckTimeout": 120
+      },
+      "variables": {
+        "AUTH_APP_DB_PASSWORD": "<secret:AUTH_APP_DB_PASSWORD>",
+        "AUTH_DATABASE_URL": "postgresql://dealroom_auth_app:${{AUTH_APP_DB_PASSWORD}}@${{postgres.PGHOST}}:${{postgres.PGPORT}}/dealroom_auth",
+        "AUTH_DB_PASSWORD": "<secret:AUTH_DB_PASSWORD>",
+        "AUTH_MIGRATION_DATABASE_URL": "postgresql://dealroom_auth:${{AUTH_DB_PASSWORD}}@${{postgres.PGHOST}}:${{postgres.PGPORT}}/dealroom_auth",
+        "AUTH_SERVICE_TOKEN": "<secret:AUTH_SERVICE_TOKEN>",
+        "LOG_LEVEL": "info",
+        "MAIL_DRIVER": "resend",
+        "MAIL_FROM": "Dealroom <onboarding@resend.dev>",
+        "NODE_ENV": "development",
+        "PORT": "3200",
+        "PRODUCT_NAME": "Dealroom",
+        "REDIS_URL": "${{redis.REDIS_URL}}?family=0",
+        "TRUST_PROXY_HOPS": "1"
+      }
+    },
+    {
+      "id": "svc-homepage",
+      "name": "homepage",
+      "source": {
+        "repo": "dealroom-no/homepage",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "healthcheckPath": "/health"
+      },
+      "variables": {
+        "DEALROOM_API_URL": "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:3100",
+        "HOSTNAME": "::",
+        "NEXT_PUBLIC_APP_URL": "https://${{app.RAILWAY_PUBLIC_DOMAIN}}",
+        "PORT": "3001"
+      }
+    },
+    {
+      "id": "svc-payment",
+      "name": "payment",
+      "source": {
+        "repo": "dealroom-no/payment",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "healthcheckPath": "/health"
+      },
+      "variables": {
+        "LOG_LEVEL": "info",
+        "NODE_ENV": "development",
+        "PAYMENT_DRIVER": "mock",
+        "PAYMENT_SERVICE_TOKEN": "<secret:PAYMENT_SERVICE_TOKEN>",
+        "PORT": "3500"
+      }
+    },
+    {
+      "id": "svc-postgres",
+      "name": "postgres",
+      "source": {
+        "repo": null,
+        "branch": null,
+        "image": "ghcr.io/railwayapp-templates/postgres-ssl:18"
+      },
+      "deploy": {},
+      "variables": {
+        "DATABASE_PUBLIC_URL": "postgresql://${{PGUSER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_TCP_PROXY_DOMAIN}}:${{RAILWAY_TCP_PROXY_PORT}}/${{PGDATABASE}}",
+        "DATABASE_URL": "postgresql://${{PGUSER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:5432/${{PGDATABASE}}",
+        "PGDATA": "<secret:PGDATA>",
+        "PGDATABASE": "${{POSTGRES_DB}}",
+        "PGHOST": "${{RAILWAY_PRIVATE_DOMAIN}}",
+        "PGPASSWORD": "${{POSTGRES_PASSWORD}}",
+        "PGPORT": "5432",
+        "PGUSER": "${{POSTGRES_USER}}",
+        "POSTGRES_DB": "<secret:POSTGRES_DB>",
+        "POSTGRES_PASSWORD": "<secret:POSTGRES_PASSWORD>",
+        "POSTGRES_USER": "<secret:POSTGRES_USER>",
+        "RAILWAY_DEPLOYMENT_DRAINING_SECONDS": "<secret:RAILWAY_DEPLOYMENT_DRAINING_SECONDS>",
+        "SSL_CERT_DAYS": "<secret:SSL_CERT_DAYS>",
+        "TAPTHAT_DUMP_PASSWORD": "<secret:TAPTHAT_DUMP_PASSWORD>"
+      }
+    },
+    {
+      "id": "svc-redis",
+      "name": "redis",
+      "source": {
+        "repo": null,
+        "branch": null,
+        "image": "railwayapp/redis:8.2"
+      },
+      "deploy": {},
+      "variables": {
+        "RAILWAY_RUN_UID": "0",
+        "REDISHOST": "${{RAILWAY_PRIVATE_DOMAIN}}",
+        "REDISPASSWORD": "${{REDIS_PASSWORD}}",
+        "REDISPORT": "6379",
+        "REDISUSER": "default",
+        "REDIS_PASSWORD": "<secret:REDIS_PASSWORD>",
+        "REDIS_URL": "redis://${{REDISUSER}}:${{REDIS_PASSWORD}}@${{REDISHOST}}:${{REDISPORT}}"
+      }
+    },
+    {
+      "id": "svc-storage",
+      "name": "storage",
+      "source": {
+        "repo": "dealroom-no/storage",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {
+        "healthcheckPath": "/health"
+      },
+      "variables": {
+        "LOG_LEVEL": "info",
+        "NODE_ENV": "development",
+        "PORT": "3300",
+        "RAILWAY_RUN_UID": "0",
+        "SIGNED_URL_SECRET": "<secret:SIGNED_URL_SECRET>",
+        "STORAGE_SERVICE_TOKEN": "<secret:STORAGE_SERVICE_TOKEN>"
+      }
+    },
+    {
+      "id": "svc-webhooks",
+      "name": "webhooks",
+      "source": {
+        "repo": "dealroom-no/resources",
+        "branch": "dev",
+        "image": null
+      },
+      "deploy": {},
+      "variables": {
+        "PAYMENT_UPSTREAM": "${{payment.RAILWAY_PRIVATE_DOMAIN}}:3500",
+        "PORT": "8080"
+      }
+    }
+  ]
+}
