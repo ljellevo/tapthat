@@ -114,8 +114,20 @@ TAPTHAT_ENABLE=1 npx tapthat-server
 ```
 
 For Docker Compose and hosted dev environments such as Railway, see
-[docs/setup.md](docs/setup.md). To let reviewers change several services at once and send
-the result to `dev` in one step, run a [playground environment](docs/playground.md).
+[docs/setup.md](docs/setup.md).
+
+**Or: a playground on Railway, in one command.** To let reviewers change several services
+at once and send the result to `dev` in one step, run a
+[playground environment](docs/playground.md). In a folder linked to your Railway project:
+
+```bash
+npx tapthat-server install        # asks for your dev branch and site; sets up the rest
+```
+
+It asks three things: the platform, the dev branch and the site. It creates the branch or
+the dev environment if either is missing. Then it shows everything it will set up, and
+does it after one confirmation. Running it again only fixes what is missing, and
+`--dry-run` shows the plan without changing anything.
 
 **2. Point the extension at it.** In the extension's options page, paste the **Sidecar
 URL** and **token** that the sidecar printed, then **Save & test**. The allowed sites fill
