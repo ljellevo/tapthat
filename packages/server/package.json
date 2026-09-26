@@ -1,6 +1,6 @@
 {
   "name": "tapthat-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Applies TapThat comments to a repo with a coding agent, beside your dev server. Development tool — never run it in production.",
   "license": "MIT",
   "type": "module",

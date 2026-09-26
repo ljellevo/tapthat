@@ -1,5 +1,11 @@
 # Changelog
 
+## tapthat-server 0.1.2
+
+- The image's Postgres client is 18 (was 17). Railway's Postgres template runs 18, and
+  `pg_dump` refuses servers newer than itself, so Start session against a Railway `dev`
+  failed. The 18 client still dumps 17 and older.
+
 ## tapthat-server 0.1.1
 
 - Published with npm trusted publishing: no token, with provenance from this repository's

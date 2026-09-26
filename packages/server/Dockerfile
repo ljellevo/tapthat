@@ -32,8 +32,10 @@ FROM node:${NODE_VERSION}-slim
 
 ARG CLAUDE_CODE_VERSION=latest
 # Start session copies the dev database with pg_dump, which refuses servers
-# newer than itself: match this to the Postgres your dev environment runs.
-ARG PG_MAJOR=17
+# newer than itself, while a newer pg_dump reads older servers fine. So this
+# tracks the newest Postgres a dev environment is likely to run (Railway's
+# template is 18); build with an older value only to save a few MB.
+ARG PG_MAJOR=18
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates tini openssh-client curl \
