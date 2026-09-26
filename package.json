@@ -17,13 +17,13 @@
     "developer-tools"
   ],
   "scripts": {
-    "build": "npm run build -w @tapthat/extension",
-    "dev": "npm run dev -w @tapthat/extension",
+    "build": "npm run build -w tapthat-client",
+    "dev": "npm run dev -w tapthat-client",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
-    "package": "npm run package -w @tapthat/extension",
-    "fixture": "npm run fixture -w @tapthat/extension"
+    "package": "npm run package -w tapthat-client",
+    "fixture": "npm run fixture -w tapthat-client"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

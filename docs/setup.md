@@ -12,7 +12,7 @@ The full reference for running TapThat Full. For the short version, see
 
 | Piece | What it does | Where it runs |
 |---|---|---|
-| **Sidecar** (`@tapthat/sidecar`) | HTTP API, job queue, credential vault, agent runner | Beside your dev server, in the same working tree |
+| **Sidecar** (`tapthat-server`) | HTTP API, job queue, credential vault, agent runner | Beside your dev server, in the same working tree |
 | **Extension** (`tapthat.zip`) | Select an element, write a comment, Apply | Each reviewer's browser |
 
 The sidecar and your dev server **must share one working tree**. When the agent edits a
@@ -47,8 +47,8 @@ For a developer running the dev server locally.
 ```bash
 # in the repository you want edited, on the branch the agent should commit to
 git switch -c dev                    # or any branch — never main
-npm i -D @tapthat/sidecar
-npx tapthat-sidecar init
+npm i -D tapthat-server
+npx tapthat-server init
 ```
 
 `init` writes three things and prints what to paste into the extension:
@@ -62,7 +62,7 @@ npx tapthat-sidecar init
 Then, with your dev server running:
 
 ```bash
-TAPTHAT_ENABLE=1 npx tapthat-sidecar
+TAPTHAT_ENABLE=1 npx tapthat-server
 ```
 
 `TAPTHAT_ENABLE=1` is a deliberate safety latch: the sidecar will not start without it,
@@ -81,7 +81,7 @@ the agent's would be indistinguishable. Commit or stash first.
 ## Path 2 — Docker Compose
 
 For a dev stack that already runs in Compose. Copy
-[`packages/sidecar/examples/docker-compose.dev.yml`](../packages/sidecar/examples/docker-compose.dev.yml)
+[`packages/server/examples/docker-compose.dev.yml`](../packages/server/examples/docker-compose.dev.yml)
 into your repository and adjust the `web` service to match yours:
 
 ```yaml
@@ -102,7 +102,7 @@ services:
     #   CHOKIDAR_USEPOLLING: "1"    # Vite/webpack; for Next use WATCHPACK_POLLING: "true"
 
   tapthat:
-    image: ghcr.io/ljellevo/tapthat-sidecar:latest
+    image: ghcr.io/ljellevo/tapthat-server:latest
     # Without this, files the agent edits come back owned by root on Linux.
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     depends_on:
@@ -124,7 +124,7 @@ volumes:
 ```
 
 ```bash
-npx tapthat-sidecar init           # once: config + secrets
+npx tapthat-server init           # once: config + secrets
 HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose -f docker-compose.dev.yml up
 ```
 
@@ -163,9 +163,9 @@ fine-grained token with **Contents: read**, or **read and write** if you enable 
 
 ### Service settings
 
-Create one service from the image `ghcr.io/ljellevo/tapthat-sidecar:latest`. Until that
+Create one service from the image `ghcr.io/ljellevo/tapthat-server:latest`. Until that
 image is published, deploy it from this repository instead, with the Dockerfile path
-`packages/sidecar/Dockerfile`. Then:
+`packages/server/Dockerfile`. Then:
 
 | Setting | Value |
 |---|---|
@@ -222,7 +222,7 @@ import { defineRailway, image, preserve, service, volume } from "railway/iac";
 // TapThat: the customer app in dev mode behind the sidecar, for design review.
 // A dev environment by definition; it must never serve customers.
 const appDev = service("app-dev", {
-  source: image("ghcr.io/ljellevo/tapthat-sidecar:latest"),
+  source: image("ghcr.io/ljellevo/tapthat-server:latest"),
   replicas: { [REGION]: 1 },
   healthcheck: "/__tapthat/healthz",
   // First boot clones and runs npm ci before the health check can pass.
@@ -358,11 +358,11 @@ committed file:
 
 | Command | Does |
 |---|---|
-| `tapthat-sidecar init` | Writes `tapthat.config.json` and `.tapthat/secrets.env`, updates `.gitignore`, prints the extension values |
-| `tapthat-sidecar` / `serve` | Starts the sidecar |
-| `tapthat-sidecar doctor` | Checks config, repo, agent CLI and secrets without starting anything |
-| `tapthat-sidecar run-file batch.json` | Runs one batch from a file, no HTTP. For testing prompts against a scratch checkout |
-| `tapthat-sidecar audit-prod` | Fails if the sidecar appears in a production dependency tree or deploy file. Run it in CI |
+| `tapthat-server init` | Writes `tapthat.config.json` and `.tapthat/secrets.env`, updates `.gitignore`, prints the extension values |
+| `tapthat-server` / `serve` | Starts the sidecar |
+| `tapthat-server doctor` | Checks config, repo, agent CLI and secrets without starting anything |
+| `tapthat-server run-file batch.json` | Runs one batch from a file, no HTTP. For testing prompts against a scratch checkout |
+| `tapthat-server audit-prod` | Fails if the sidecar appears in a production dependency tree or deploy file. Run it in CI |
 
 Several repositories, sessions and the database copy have their own settings: see
 [playground.md](playground.md#settings).

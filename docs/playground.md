@@ -156,7 +156,7 @@ version), add `image` to the `railway/iac` import. Then:
 // Postgres; Commit to dev pushes to the `dev` branch, which dev deploys.
 const playground = ctx.isEnvironment("tapthat");
 const workspace = service("workspace", {
-  source: image("ghcr.io/ljellevo/tapthat-sidecar:latest"),
+  source: image("ghcr.io/ljellevo/tapthat-server:latest"),
   replicas: { [REGION]: 1 },
   healthcheck: "/__tapthat/healthz",
   // The first boot clones both repos and runs npm ci twice.

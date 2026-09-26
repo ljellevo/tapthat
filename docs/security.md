@@ -12,15 +12,15 @@ after installing:
 
 | # | Guard | How it holds | Check |
 |---|---|---|---|
-| 1 | **A separate process** | Nothing imports `@tapthat/sidecar`; it is a CLI. No bundler can pull it into an app. | `grep -r "@tapthat/sidecar" src/` finds nothing |
-| 2 | **devDependency only** | `npm i -D`. A production install (`--omit=dev`) never has it. | `npx tapthat-sidecar audit-prod` |
-| 3 | **Dev-only deploy files** | It appears only in `docker-compose.dev.yml` or a dedicated dev service, never in the production Dockerfile, compose file or manifest. | `npx tapthat-sidecar audit-prod` |
+| 1 | **A separate process** | Nothing imports `tapthat-server`; it is a CLI. No bundler can pull it into an app. | `grep -r "tapthat-server" src/` finds nothing |
+| 2 | **devDependency only** | `npm i -D`. A production install (`--omit=dev`) never has it. | `npx tapthat-server audit-prod` |
+| 3 | **Dev-only deploy files** | It appears only in `docker-compose.dev.yml` or a dedicated dev service, never in the production Dockerfile, compose file or manifest. | `npx tapthat-server audit-prod` |
 | 4 | **Runtime refusal** | Exit 78 when `NODE_ENV=production`, with no override. Exit 78 unless `TAPTHAT_ENABLE=1`, which is env-only so a committed file can't set it. | Start it without `TAPTHAT_ENABLE` |
 | 5 | **A CI check** | `audit-prod` fails the build if 2 or 3 regresses. | Add it to CI, below |
 
 ```yaml
 # .github/workflows/ci.yml in the project that uses TapThat
-- run: npx --yes @tapthat/sidecar audit-prod
+- run: npx --yes tapthat-server audit-prod
 ```
 
 `audit-prod` fails when `package.json` lists the sidecar outside `devDependencies`, when
@@ -72,7 +72,7 @@ Five layers stand in the way:
    run commands, install packages or fetch URLs, so there is nothing to exfiltrate
    through.
 5. **Pinned to the repository.** The agent's working directory is the repository root.
-   The fixtures `injection.json` and `escape.json` in `packages/sidecar/test/fixtures`
+   The fixtures `injection.json` and `escape.json` in `packages/server/test/fixtures`
    check that an injected instruction and a `../../etc/` write are refused. Run them
    against a scratch checkout after upgrading the Claude Code CLI.
 
@@ -167,5 +167,5 @@ PaaS log view shows them too. Every line is scrubbed.
 - [ ] `allowedOrigins` lists only your own dev sites
 - [ ] The branch the agent commits to is not `main`, and `main` has branch protection
 - [ ] On a PaaS, the service does not auto-deploy from the branch the agent pushes to
-- [ ] `npx tapthat-sidecar audit-prod` runs in CI
+- [ ] `npx tapthat-server audit-prod` runs in CI
 - [ ] `verifyCommand` is set

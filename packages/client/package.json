@@ -1,0 +1,25 @@
+{
+  "name": "tapthat-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Comment on any live webpage, export the feedback as a prompt for a coding agent.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/run-selectors.mjs && node test/run-classnames.mjs && node test/run-export.mjs && node test/run-full.mjs && node --no-warnings --experimental-eventsource test/run-client.mjs",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "package": "npm run build && node package.mjs",
+    "fixture": "python3 -m http.server 8731 --directory test"
+  },
+  "dependencies": {
+    "tapthat-shared": "*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.300",
+    "@types/jsdom": "^28.0.3",
+    "jsdom": "^30.0.1"
+  }
+}

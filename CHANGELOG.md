@@ -24,7 +24,7 @@ requests.
   each status means, safety and cost, and common problems. It is linked from the options
   page and the key prompt, and loads nothing from the network.
 
-### `@tapthat/sidecar` 0.1.0
+### `tapthat-server` 0.1.0
 
 - `init`, `serve`, `doctor`, `run-file`, `audit-prod`.
 - The job handler: runs Claude Code with file tools only, verifies with
@@ -36,7 +36,7 @@ requests.
   a kill switch, and an audit log.
 - Proxy mode for single-port hosts, clone-on-boot, supervised dev server, skip-install
   on unchanged lockfiles, optional push.
-- Docker image `ghcr.io/ljellevo/tapthat-sidecar` with git and the Claude Code CLI; drops
+- Docker image `ghcr.io/ljellevo/tapthat-server` with git and the Claude Code CLI; drops
   root on start.
 
 ### Playground environments and changes across services

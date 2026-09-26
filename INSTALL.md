@@ -54,21 +54,21 @@ You need Node.js 20+ and git.
    ```
 3. **Add the sidecar** as a development-only dependency:
    ```bash
-   npm install --save-dev @tapthat/sidecar
+   npm install --save-dev tapthat-server
    ```
    <details><summary>Not on npm yet? Install it from source instead.</summary>
 
    ```bash
    git clone https://github.com/ljellevo/tapthat.git ~/tapthat
-   (cd ~/tapthat && npm ci && npm run build -w @tapthat/sidecar)
-   npm install --save-dev ~/tapthat/packages/sidecar
+   (cd ~/tapthat && npm ci && npm run build -w tapthat-server)
+   npm install --save-dev ~/tapthat/packages/server
    ```
    Every step below is the same.
    </details>
 4. **Set it up.** This writes `tapthat.config.json`, creates a secret access token, and
    prints the values you'll paste into the extension:
    ```bash
-   npx tapthat-sidecar init
+   npx tapthat-server init
    ```
    Check the printed dev-server address. If your app doesn't run on it, edit
    `devServerUrl` and `allowedOrigins` in `tapthat.config.json`.
@@ -81,13 +81,13 @@ You need Node.js 20+ and git.
    npm run dev
    ```
    ```bash
-   TAPTHAT_ENABLE=1 npx tapthat-sidecar
+   TAPTHAT_ENABLE=1 npx tapthat-server
    ```
    It prints a **Sidecar URL** (`http://localhost:7420`) and a **Token**. Keep them for
    Part 2.
 
 Optional: to use one shared Claude key instead of each reviewer's own, start it with
-`ANTHROPIC_API_KEY=sk-ant-… TAPTHAT_ENABLE=1 npx tapthat-sidecar`.
+`ANTHROPIC_API_KEY=sk-ant-… TAPTHAT_ENABLE=1 npx tapthat-server`.
 
 ### B. Docker Compose
 
@@ -96,18 +96,18 @@ You need Docker, and Node.js on your machine for the one-time `init`.
 1. **In your app's repository, on the agent's branch**, create the config and secrets:
    ```bash
    git switch -c dev
-   npx @tapthat/sidecar init
+   npx tapthat-server init
    ```
    <details><summary>Not on npm or ghcr yet? Build both from source.</summary>
 
    ```bash
    git clone https://github.com/ljellevo/tapthat.git ~/tapthat
-   (cd ~/tapthat && npm ci && npm run build -w @tapthat/sidecar)
-   node ~/tapthat/packages/sidecar/dist/cli.js init
-   docker build -f ~/tapthat/packages/sidecar/Dockerfile -t ghcr.io/ljellevo/tapthat-sidecar:latest ~/tapthat
+   (cd ~/tapthat && npm ci && npm run build -w tapthat-server)
+   node ~/tapthat/packages/server/dist/cli.js init
+   docker build -f ~/tapthat/packages/server/Dockerfile -t ghcr.io/ljellevo/tapthat-server:latest ~/tapthat
    ```
    </details>
-2. **Copy [`docker-compose.dev.yml`](packages/sidecar/examples/docker-compose.dev.yml)**
+2. **Copy [`docker-compose.dev.yml`](packages/server/examples/docker-compose.dev.yml)**
    into your repository and adjust the `web` service to how your app runs (build, command,
    port).
 3. **Start everything:**
@@ -130,9 +130,9 @@ be on GitHub (or anywhere git can clone from).
 2. **Create a GitHub token** that can read the repository: a fine-grained token with
    *Contents: read*. Skip this if the repository is public.
 3. **In Railway, add a new service:**
-   - Deploy from the Docker image `ghcr.io/ljellevo/tapthat-sidecar:latest`. If the image
+   - Deploy from the Docker image `ghcr.io/ljellevo/tapthat-server:latest`. If the image
      isn't published yet, deploy from the GitHub repo `ljellevo/tapthat` and set the
-     variable `RAILWAY_DOCKERFILE_PATH=packages/sidecar/Dockerfile`.
+     variable `RAILWAY_DOCKERFILE_PATH=packages/server/Dockerfile`.
    - **Add a volume** mounted at `/workspace`.
    - **Settings → Networking → Generate Domain.** This is the URL reviewers will open.
    - **Settings → Deploy → Healthcheck path** `/__tapthat/healthz`, **timeout** `900`.
@@ -201,7 +201,7 @@ Works in Chrome, Arc, Edge, Brave and other Chromium browsers.
    git clone https://github.com/ljellevo/tapthat.git && cd tapthat
    npm ci && npm run package
    ```
-   Then unzip `packages/extension/tapthat.zip`.
+   Then unzip `packages/client/tapthat.zip`.
    </details>
 2. **Load it into the browser:**
    1. Open `chrome://extensions` (in Arc: `arc://extensions`).

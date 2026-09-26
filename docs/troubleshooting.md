@@ -8,8 +8,8 @@ testing TapThat Full against a real Next.js app on a Railway-shaped container.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Refusing to start: NODE_ENV=production.` on Railway | Railway defaults Node services to production | Set `NODE_ENV=development` on the service |
-| `Refusing to start: TAPTHAT_ENABLE is not set to 1.` | The safety latch | `TAPTHAT_ENABLE=1 npx tapthat-sidecar` |
-| `TAPTHAT_TOKEN is not set.` | No token and auth is on | `npx tapthat-sidecar init`, or set the variable |
+| `Refusing to start: TAPTHAT_ENABLE is not set to 1.` | The safety latch | `TAPTHAT_ENABLE=1 npx tapthat-server` |
+| `TAPTHAT_TOKEN is not set.` | No token and auth is on | `npx tapthat-server init`, or set the variable |
 | `Branch mismatch: … targets "dev" but … has "main" checked out.` | The agent would edit a branch nobody is looking at | Check out the configured branch, or set `TAPTHAT_BRANCH` |
 | `devServerUrl: … is the sidecar's own port` | The dev server and the sidecar were given the same port | Point `TAPTHAT_DEV_SERVER` at another port, e.g. `http://localhost:3000` |
 | `… is not empty and not a git checkout, so it cannot be cloned into.` | The volume holds something other than a clone | Empty the volume, or point `TAPTHAT_REPO_ROOT` elsewhere |
