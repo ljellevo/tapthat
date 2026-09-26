@@ -6,10 +6,25 @@
  *
  * FAKE_RAILWAY_ADD_EVERYWHERE=1 makes `add` create the service in every
  * environment, as a project-level service would.
+ *
+ * The installer calls it concurrently (it loads environments in parallel), so
+ * each call holds a lock on the state file from its read to its exit; without
+ * it, one call reads while another is mid-write and sees truncated JSON.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 const file = process.env.FAKE_RAILWAY_STATE;
+const lock = `${file}.lock`;
+for (const deadline = Date.now() + 10_000; ; ) {
+  try {
+    closeSync(openSync(lock, 'wx'));
+    break;
+  } catch (err) {
+    if (err.code !== 'EEXIST' || Date.now() > deadline) throw err;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
+}
+process.on('exit', () => rmSync(lock, { force: true }));
 const state = JSON.parse(readFileSync(file, 'utf8'));
 const args = process.argv.slice(2);
 const save = () => writeFileSync(file, JSON.stringify(state, null, 2));
