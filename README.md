@@ -46,7 +46,7 @@ npm install
 npm run build
 ```
 
-Then load unpacked as above, selecting `packages/extension/`.
+Then load unpacked as above, selecting `packages/client/`.
 
 That is the whole install. Light needs no server, no account and no configuration.
 
@@ -108,13 +108,14 @@ Chrome extension ──POST──▶ sidecar ──claude -p──▶ edits file
 commit to:
 
 ```bash
-npm i -D @tapthat/sidecar          # devDependency only, never a production dep
-npx tapthat-sidecar init           # writes tapthat.config.json + secrets, prints what to paste
-TAPTHAT_ENABLE=1 npx tapthat-sidecar
+npm i -D tapthat-server          # devDependency only, never a production dep
+npx tapthat-server init           # writes tapthat.config.json + secrets, prints what to paste
+TAPTHAT_ENABLE=1 npx tapthat-server
 ```
 
 For Docker Compose and hosted dev environments such as Railway, see
-[docs/setup.md](docs/setup.md).
+[docs/setup.md](docs/setup.md). To let reviewers change several services at once and send
+the result to `dev` in one step, run a [playground environment](docs/playground.md).
 
 **2. Point the extension at it.** In the extension's options page, paste the **Sidecar
 URL** and **token** that the sidecar printed, then **Save & test**. The allowed sites fill
@@ -162,7 +163,7 @@ Three decisions drive the quality of that payload:
 - **Generated class names are rejected.** `css-1a2b3c4`, `sc-bdVaJa`, `kXhFjL`,
   `Button_root__x7f3a` and Tailwind arbitrary values change between builds, so a selector
   built on them is dead on arrival. See `isStableClass` in
-  `packages/extension/src/content/capture.ts`.
+  `packages/client/src/content/capture.ts`.
 - **Selectors keep a greppable anchor.** A chain of bare tags (`div > div > span`) can be
   unique yet tells an agent nothing, so the builder keeps walking for a named ancestor
   rather than settling for the first unique result.
@@ -178,19 +179,19 @@ npm workspaces monorepo — run everything from the repo root:
 npm run dev       # watching build of the extension
 npm run check     # typecheck + tests + production build, across workspaces
 npm test          # every test suite, in every workspace
-npm run package   # build packages/extension/tapthat.zip
+npm run package   # build packages/client/tapthat.zip
 ```
 
-The sidecar's suites run a fake agent (`packages/sidecar/test/fake-agent.mjs`) against real
+The sidecar's suites run a fake agent (`packages/server/test/fake-agent.mjs`) against real
 git repositories, so the whole Apply lifecycle is tested without an API key.
 
 | Package | What it is |
 | --- | --- |
-| `packages/extension` | The Chromium MV3 extension. Private. |
+| `packages/client` | The Chromium MV3 extension. Private. |
 | `packages/shared` | Types, HTTP protocol, and the one prompt builder. Private, never published. |
-| `packages/sidecar` | `@tapthat/sidecar` — the agent runner. Published to npm and ghcr. |
+| `packages/server` | `tapthat-server` — the agent runner. Published to npm and ghcr. |
 
-`packages/extension/test/fixture.html` is a deliberately hostile page — repeated identical
+`packages/client/test/fixture.html` is a deliberately hostile page — repeated identical
 markup, framework hash classes, Tailwind arbitrary values, deep anonymous nesting. Serve it
 and annotate it by hand to exercise the extension:
 
@@ -200,15 +201,15 @@ npm run fixture   # then open http://localhost:8731/fixture.html
 
 Because it's on localhost, the floating button appears automatically.
 
-`node packages/extension/test/sample-export.mjs` prints a complete export built from that
+`node packages/client/test/sample-export.mjs` prints a complete export built from that
 fixture — use it to review the exact payload after changing `capture.ts` or the prompt
 builder.
 
 ### Releasing
 
-**The sidecar** is released by pushing a tag: `git tag sidecar-v0.2.0 && git push origin
-sidecar-v0.2.0` publishes `@tapthat/sidecar` to npm (needs the `NPM_TOKEN` secret) and
-`ghcr.io/ljellevo/tapthat-sidecar` to ghcr. Make the ghcr package public once, after the
+**The sidecar** is released by pushing a tag: `git tag server-v0.2.0 && git push origin
+server-v0.2.0` publishes `tapthat-server` to npm (needs the `NPM_TOKEN` secret) and
+`ghcr.io/ljellevo/tapthat-server` to ghcr. Make the ghcr package public once, after the
 first release, so Railway and Compose can pull it without credentials.
 
 **The extension** releases are automatic. Every push to `main` that touches the extension builds, tests,

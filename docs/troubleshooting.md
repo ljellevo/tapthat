@@ -8,13 +8,27 @@ testing TapThat Full against a real Next.js app on a Railway-shaped container.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Refusing to start: NODE_ENV=production.` on Railway | Railway defaults Node services to production | Set `NODE_ENV=development` on the service |
-| `Refusing to start: TAPTHAT_ENABLE is not set to 1.` | The safety latch | `TAPTHAT_ENABLE=1 npx tapthat-sidecar` |
-| `TAPTHAT_TOKEN is not set.` | No token and auth is on | `npx tapthat-sidecar init`, or set the variable |
+| `Refusing to start: TAPTHAT_ENABLE is not set to 1.` | The safety latch | `TAPTHAT_ENABLE=1 npx tapthat-server` |
+| `TAPTHAT_TOKEN is not set.` | No token and auth is on | `npx tapthat-server init`, or set the variable |
 | `Branch mismatch: … targets "dev" but … has "main" checked out.` | The agent would edit a branch nobody is looking at | Check out the configured branch, or set `TAPTHAT_BRANCH` |
 | `devServerUrl: … is the sidecar's own port` | The dev server and the sidecar were given the same port | Point `TAPTHAT_DEV_SERVER` at another port, e.g. `http://localhost:3000` |
 | `… is not empty and not a git checkout, so it cannot be cloned into.` | The volume holds something other than a clone | Empty the volume, or point `TAPTHAT_REPO_ROOT` elsewhere |
 | `Could not clone …` | Private repository, or wrong URL | Set `TAPTHAT_GIT_TOKEN`; keep credentials out of the URL |
 | Railway health check fails on the first deploy | Clone and `npm ci` take longer than the timeout | Raise the health check timeout to 900 s; later boots are fast |
+
+## Playground sessions
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Configuration problems: devServer.command required…` right after the first deploy | Before 0.1.0 the env-only first pass was validated before the repo supplying the rest was cloned | Fixed: the first pass is provisional, and the committed config completes it |
+| Apply says "Start a session first" | The sidecar is in `git.mode: "session"` and no session is active | Press **Start session** in the panel |
+| Start session fails: `pg_dump: error: aborting because of server version mismatch` | The image's client is older than `dev`'s Postgres | Rebuild with `--build-arg PG_MAJOR=<server major>` |
+| "The source user cannot read role passwords" | The copy's login lacks `pg_read_all_data` | `GRANT pg_read_all_data TO <role>`; data rooms can't log in until then |
+| Data rooms fail to open after a copy | The playground's `TENANCY_MASTER_KEY` or database passwords differ from `dev`'s | Set them to `dev`'s values; see playground.md, "Values that must match dev" |
+| Commit to dev: "Someone changed the same lines on dev" | `dev` moved and conflicts with the session | Nothing was sent. A developer merges by hand, then Discard and start again |
+| Commit to dev: "has changes that were never committed" | A batch's build broke and left edits | Undo it, or apply a fix, then Commit |
+| The session shows "The sidecar restarted while…" | A restart landed mid-Start/Commit/Discard | Discard, then Start again |
+| Previews of documents are missing in the playground | Files live on `storage`'s volume, which the copy doesn't include | Known limitation; metadata and lists are correct |
 
 ## The dev server
 

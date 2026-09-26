@@ -12,12 +12,12 @@ Rules:
 
 npm workspaces monorepo. Sources live under `packages/`, not at the repo root:
 
-- `packages/extension/` — the Chromium MV3 extension (`src/`, `test/`, `manifest.json`,
-  `build.mjs`, `package.mjs`). Build output is `packages/extension/dist/`, and
-  `npm run package` writes `packages/extension/tapthat.zip`.
+- `packages/client/` — the Chromium MV3 extension (`src/`, `test/`, `manifest.json`,
+  `build.mjs`, `package.mjs`). Build output is `packages/client/dist/`, and
+  `npm run package` writes `packages/client/tapthat.zip`.
 - `packages/shared/` — private, never published. Types, the HTTP protocol, and the one
   prompt builder used by both the extension and the sidecar. Compiled with
   `"lib": ["ES2022"], "types": []` so any DOM access in it is a typecheck failure.
-- `packages/sidecar/` — `@tapthat/sidecar`, the agent runner. Published to npm and ghcr.
+- `packages/server/` — `tapthat-server`, the agent runner. Published to npm and ghcr.
 
 Run everything from the repo root: `npm run check` fans out across workspaces.

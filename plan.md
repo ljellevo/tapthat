@@ -3,7 +3,7 @@
 > **Status (2026-09-25): built, as TapThat Full.** This is the original design brief. What
 > shipped differs in these places. Each is recorded where it was decided:
 >
-> - Names: `@yourorg/comment-agent` → `@tapthat/sidecar`, `COMMENT_AGENT_*` → `TAPTHAT_*`.
+> - Names: `@yourorg/comment-agent` → `tapthat-server`, `COMMENT_AGENT_*` → `TAPTHAT_*`.
 > - State is a JSON file, not SQLite ([ADR 0002](docs/adr/0002-json-store.md)).
 > - The source-map plugin (Phase 0) is deferred; the extension's capture payload carries
 >   the load instead.

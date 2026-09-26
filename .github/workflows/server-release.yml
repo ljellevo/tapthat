@@ -1,0 +1,73 @@
+name: Server release
+
+# Publishes tapthat-server to npm and ghcr.io/<owner>/tapthat-server.
+# Cut a release by pushing a tag:  git tag server-v0.2.0 && git push origin server-v0.2.0
+# Needs the NPM_TOKEN repository secret; ghcr uses the workflow's own token.
+
+on:
+  push:
+    tags: ['server-v*']
+
+permissions:
+  contents: read
+  packages: write
+  # npm provenance: the package is signed with this workflow's OIDC identity.
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      - name: Version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#server-v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag must be server-vMAJOR.MINOR.PATCH, got $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp the version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # --allow-same-version: the first release is the version already in package.json.
+          npm version "$VERSION" --no-git-tag-version --allow-same-version -w tapthat-server
+          sed -i "s/^const VERSION = '.*';/const VERSION = '$VERSION';/" packages/server/src/cli.ts
+
+      - name: Typecheck, test and build
+        run: npm run check -w tapthat-shared && npm run check -w tapthat-server
+
+      - name: Publish to npm
+        run: npm publish -w tapthat-server --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/tapthat-server:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/tapthat-server:latest

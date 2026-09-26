@@ -1,0 +1,49 @@
+# docker-compose.dev.yml — the dev stack with the TapThat sidecar beside it.
+#
+# This file must never be referenced by production. `npx tapthat-server
+# audit-prod` in CI fails the build if a non-dev compose file or Dockerfile
+# mentions the sidecar.
+#
+#   HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose -f docker-compose.dev.yml up
+#
+# Secrets come from .tapthat/secrets.env, written by `npx tapthat-server init`.
+
+services:
+  web:
+    build: .
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - .:/app
+      - /app/node_modules
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    # environment:
+    #   Uncomment if commits appear but the browser never updates: file watchers
+    #   often miss writes made from another container on a bind mount.
+    #   CHOKIDAR_USEPOLLING: "1"    # Vite/webpack; for Next use WATCHPACK_POLLING: "true"
+
+  tapthat:
+    image: ghcr.io/ljellevo/tapthat-server:latest
+    # Without this, files the agent edits come back owned by root on Linux and
+    # you can no longer edit them yourself.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    depends_on:
+      - web
+    volumes:
+      - .:/workspace/repo              # the same working tree as `web` — required
+      - tapthat-state:/workspace/state
+    ports:
+      - "7420:7420"
+    env_file:
+      - .tapthat/secrets.env           # TAPTHAT_TOKEN, TAPTHAT_ENCRYPTION_KEY
+    environment:
+      TAPTHAT_ENABLE: "1"              # the safety latch; refuses to boot without it
+      TAPTHAT_DEV_SERVER: "http://web:5173"
+      # Pages that may send comments. The browser's address, not the container's.
+      TAPTHAT_ALLOWED_ORIGINS: "http://localhost:5173"
+      # Optional: a shared key, so reviewers don't each paste their own.
+      # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+volumes:
+  tapthat-state:

@@ -25,13 +25,13 @@ jobs:
       # uncommitted work shares the tree with the agent on the npx path.
       - name: No hard reset in the sidecar
         run: |
-          if grep -rn "reset --hard\|'reset', '--hard'" packages/sidecar/src; then
-            echo "packages/sidecar/src must never hard-reset the working tree" >&2
+          if grep -rn "reset --hard\|'reset', '--hard'" packages/server/src; then
+            echo "packages/server/src must never hard-reset the working tree" >&2
             exit 1
           fi
 
       - name: The sidecar image builds
-        run: docker build -f packages/sidecar/Dockerfile -t tapthat-sidecar:ci .
+        run: docker build -f packages/server/Dockerfile -t tapthat-server:ci .
 
       - name: Verify the extension packages
         run: npm run package
@@ -40,5 +40,5 @@ jobs:
         with:
           name: tapthat-unpacked
           path: |
-            packages/extension/manifest.json
-            packages/extension/dist/
+            packages/client/manifest.json
+            packages/client/dist/

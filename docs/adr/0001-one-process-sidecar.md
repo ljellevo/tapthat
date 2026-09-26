@@ -9,7 +9,7 @@ own.
 
 ## Decision
 
-One process, `@tapthat/sidecar`, runs everything, beside the dev server and in its working
+One process, `tapthat-server`, runs everything, beside the dev server and in its working
 tree. It ships two ways from one codebase: an npm package with a `bin` entry (`npx`), and a
 Docker image that also carries git and the Claude Code CLI.
 
