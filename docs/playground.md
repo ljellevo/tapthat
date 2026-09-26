@@ -9,7 +9,7 @@ Railway project
 ├─ environment "dev"      every service deploys from the `dev` branch, as normal
 │    app · api · auth · storage · … · postgres · redis
 │         ▲                                   │
-│         │ Commit to dev (git push)          │ Start session (pg_dump, read-only)
+│         │ Commit to dev (git push)          │ Start session (pg_dump via TCP proxy)
 │         │                                   ▼
 └─ environment "tapthat"  the playground
      workspace ← TapThat image, one volume, the only public service
@@ -54,7 +54,7 @@ the way Railway starts it:
    Every repository is checked before any is pushed. A conflict anywhere, or edits left
    behind by a broken build, refuses the whole Commit, pushes nothing, and leaves the
    session exactly as it was.
-4. The session ends and the playground moves onto the new `dev`. **Discard all** ends it
+4. The session ends and the playground moves onto the new `dev`. **Cancel session** ends it
    without sending anything, and **puts the data back** to the copy taken at Start, so a
    session is always fully reversible.
 
@@ -62,7 +62,67 @@ the way Railway starts it:
 
 ## Setting it up
 
-The example is Dealroom (`app` + `api`). Any set of repositories works the same way.
+### The installer
+
+On Railway, one command does all of this section. Run it in a folder linked to the
+project (`railway link`), with the Railway CLI and the GitHub CLI (`gh`) logged in:
+
+```sh
+npx tapthat-server install
+```
+
+It asks three questions:
+
+1. **The platform.** Railway, for now.
+2. **The dev branch** that Commit to dev pushes to (default `dev`). If a repository
+   doesn't have it, the installer offers to create it from the default branch. If no
+   environment deploys it, it offers to create one as a copy of the environment that
+   deploys the default branch.
+3. **The site** reviewers comment on. It suggests one: a service with a public domain,
+   preferring names like `app` or `web`.
+
+Then it works out the rest from the `dev` environment:
+- **The workspace:** the site, plus the services the site calls over the private network
+  (`${{api.RAILWAY_PRIVATE_DOMAIN}}`). These run as dev servers in the workspace.
+- **What stays:** everything those depend on, transitively, such as databases and other
+  services. These run in the playground as they do in `dev`.
+- **What's left out:** everything else.
+
+It lists every change and asks once. Then it:
+- opens a TCP proxy on `dev`'s Postgres;
+- creates the playground as a copy of `dev`, so secrets and database passwords match;
+- removes what the playground doesn't need;
+- adds the `workspace` service with its volume, health check, domain and variables. Each
+  service's variables are rewritten for life inside the workspace: `API_*` for `api`,
+  `localhost` for calls between the dev servers, and the workspace's domain for the
+  site's;
+- asks for the GitHub token, and checks that it can push to every repository;
+- commits a generated `tapthat.config.json` to the site's repository, unless one exists;
+- deploys, waits until the workspace is healthy, and makes the first copy of `dev`'s data.
+
+At the end it prints what to put in the extension.
+
+It also fixes two things Railway gets wrong when it creates services outside its
+templates (see [troubleshooting](troubleshooting.md)):
+- a Postgres superuser password stored as the literal text `secret(32, "…")`;
+- a Redis without its connection variables.
+
+**Running it again is safe.** Every step checks before it acts. On a finished setup it
+changes nothing, and after a failure it picks up where it stopped. It never overwrites an
+existing variable or config: a hand-made setup is checked by its own names, and anything
+it can't work out is reported, not guessed.
+
+| Flag | |
+|---|---|
+| `--dry-run` | Show what would change; change nothing |
+| `--branch dev`, `--site app` | Answer the questions up front |
+| `--playground <name>` | The playground environment (default `tapthat`) |
+| `--yes` | Take the defaults and the plan without asking (CI) |
+| `--git-token-stdin` | Read the workspace's GitHub token from stdin |
+
+The rest of this section is what the installer sets up, for doing it by hand or on
+another platform. The example is Dealroom (`app` + `api`); any set of repositories works
+the same way.
 
 ### 1. The workspace config, committed in the primary repository
 
@@ -176,8 +236,8 @@ const workspace = service("workspace", {
     TAPTHAT_PROXY: "1",
     TAPTHAT_START_DEV_SERVER: "1",
     TAPTHAT_ALLOWED_ORIGINS: `https://${ref("workspace", "RAILWAY_PUBLIC_DOMAIN")}`,
-    // Start session reads dev's Postgres through its TCP proxy as a read-only
-    // role (pg_read_all_data), and writes this environment's.
+    // Start session reads dev's Postgres through its TCP proxy as dev's
+    // superuser, and writes this environment's.
     TAPTHAT_DEV_DATABASE_URL: preserve(),
     TAPTHAT_PLAYGROUND_DATABASE_URL:
       `postgresql://${ref("postgres", "PGUSER")}:${ref("postgres", "PGPASSWORD")}@${ref("postgres", "PGHOST")}:${ref("postgres", "PGPORT")}/postgres`,
@@ -218,22 +278,19 @@ unmodified.
 
 ### 3. One-time setup in `dev`
 
-1. **A read-only login for the copy.** Add it to `deploy/postgres/roles.sql`, or run it
-   once through the TCP proxy:
-   ```sql
-   CREATE ROLE dealroom_dump LOGIN PASSWORD '<a long random password>';
-   GRANT pg_read_all_data TO dealroom_dump;
-   ```
-   `pg_read_all_data` reads every table **and the role password hashes**, which the copy
-   needs, so no superuser is involved. This was verified against real databases. A login
-   without that grant still copies the data, but not the passwords, and the panel says so.
-2. **Reach `dev`'s Postgres from the playground.** Railway environments cannot reach each
+1. **Reach `dev`'s Postgres from the playground.** Railway environments cannot reach each
    other over the private network, so keep a TCP proxy open on `dev`'s Postgres
-   (`railway tcp-proxy create --port 5432 --service postgres` in `dev`). DEPLOY.md closes
-   it after bootstrap today; this is a deliberate change. It is a public endpoint guarded
-   by a strong password and a read-only role.
+   (`railway tcp-proxy create --port 5432 --service postgres` in `dev`). This is a public
+   endpoint, so it needs a strong password (below).
+2. **Log in as `dev`'s superuser.** The copy needs every database and every role's
+   password. A role with `pg_read_all_data` can read the password hashes, but it does
+   **not** grant `CONNECT`. Where `CONNECT` is revoked from `PUBLIC`, as Dealroom does on
+   every database including each data room's, such a role can't open them. The superuser
+   can, and it only exists in `dev`.
+   - Check that its password is a random string, not the literal text `secret(32, "…")`
+     (see [troubleshooting](troubleshooting.md)).
 3. **Set `TAPTHAT_DEV_DATABASE_URL`** in the playground to
-   `postgresql://dealroom_dump:<password>@<proxy host>:<proxy port>/postgres`.
+   `postgresql://postgres:<url-encoded password>@<proxy host>:<proxy port>/postgres`.
 
 ### 4. Values that must match `dev`
 
@@ -270,7 +327,7 @@ Everything in [setup.md's reference](setup.md#configuration-reference), plus:
 | `agent.rules` | none | | Sentences added to the prompt |
 | `git.mode` | `commit` | `TAPTHAT_GIT_MODE` | `session` for a playground |
 | `git.deployOrder` | workspace order | | Push order on Commit |
-| `session.snapshot.source` | none | `TAPTHAT_SNAPSHOT_SOURCE` | `dev`'s Postgres, read-only |
+| `session.snapshot.source` | none | `TAPTHAT_SNAPSHOT_SOURCE` | `dev`'s Postgres, as its superuser |
 | `session.snapshot.target` | none | `TAPTHAT_SNAPSHOT_TARGET` | The playground's Postgres, as a user that can drop and create databases |
 | `session.snapshot.redis` | none | `TAPTHAT_SNAPSHOT_REDIS` | Flushed after each copy |
 | `session.snapshot.exclude` | none | | Databases not copied (`postgres` and templates never are) |
@@ -286,8 +343,8 @@ servers fine but refuses newer ones: for a newer server, build with
 - **Document files.** They live on `storage`'s volume, not in Postgres. After a copy, the
   document list and metadata match `dev`, but previews of `dev`'s files may be missing.
 - **Schema changes by the agent** are ruled out by the example's `agent.rules`. The
-  plumbing makes them possible later: the playground has its own database, and Discard
-  restores the start copy.
+  plumbing makes them possible later: the playground has its own database, and Cancel
+  session restores the start copy.
 - **One playground per reviewer.** Everyone on a playground shares its session.
 - **Deploy status.** After Commit, the panel says what was pushed, not whether `dev`
   deployed it.

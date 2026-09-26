@@ -21,6 +21,7 @@ import { Workspace } from './workspace';
 
 const USAGE = `tapthat-server — apply TapThat comments to this repo with a coding agent
 
+  tapthat-server install                 set up a playground environment on Railway (see install --help)
   tapthat-server init                    write tapthat.config.json and generate secrets
   tapthat-server serve                   start the HTTP API (default)
   tapthat-server run-file <batch.json>   run one batch from a file (no HTTP)
@@ -29,7 +30,7 @@ const USAGE = `tapthat-server — apply TapThat comments to this repo with a cod
 
 Development tool only. serve and run-file require TAPTHAT_ENABLE=1.`;
 
-const VERSION = '0.1.2';
+const VERSION = '0.2.0';
 const SECRETS_FILE = join('.tapthat', 'secrets.env');
 
 const execFileP = promisify(execFile);
@@ -352,7 +353,13 @@ async function cmdServe(): Promise<number> {
       return 1;
     }
   }
-  if (!(await prepareAll(config))) return 1;
+  if (!(await prepareAll(config))) {
+    // A fresh playground's database is empty until the first Start session
+    // copies dev into it, and migrations may need what the copy brings (roles,
+    // databases). Stay up so Start session can run; it prepares again after.
+    if (!config.session.snapshot) return 1;
+    console.error('[tapthat] continuing without it: Start session copies the data and prepares again');
+  }
 
   const servers = new DevServers(
     config.devServer.start
@@ -633,6 +640,20 @@ async function main(): Promise<number> {
   if (command === '--version' || command === '-v') {
     console.log(VERSION);
     return 0;
+  }
+
+  if (command === 'install') {
+    const { install, INSTALL_USAGE, parseInstallArgs } = await import('./install/index');
+    if (rest.includes('--help') || rest.includes('-h')) {
+      console.log(INSTALL_USAGE);
+      return 0;
+    }
+    const opts = parseInstallArgs(rest, process.cwd());
+    if (typeof opts === 'string') {
+      console.error(`${opts}\n\n${INSTALL_USAGE}`);
+      return 1;
+    }
+    return install(opts);
   }
 
   // These start nothing and touch no repository content beyond writing config.

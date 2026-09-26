@@ -153,6 +153,11 @@ async function boot(url, respond = () => HEALTH) {
   help?.click();
   check('help asks the background to open the help page',
     window.chrome._sent.some((m) => m.type === 'OPEN_HELP'), JSON.stringify(window.chrome._sent));
+  const settingsBtn = root()?.querySelector('.panel-settings');
+  check('Light: the settings button is in the panel header', !!settingsBtn);
+  settingsBtn?.click();
+  check('settings asks the background to open the options page',
+    window.chrome._sent.some((m) => m.type === 'OPEN_OPTIONS'), JSON.stringify(window.chrome._sent));
   check('Light: zero network requests', requests.length === 0, requests.join(', '));
   window.close();
 }
@@ -185,9 +190,8 @@ async function boot(url, respond = () => HEALTH) {
   });
   await new Promise((r) => setTimeout(r, 100));
   check('Full: Apply to dev appears live', button('Apply to dev')?.hidden === false);
-  check('Full: Apply becomes primary and Export demotes to ghost',
-    button('Apply to dev')?.classList.contains('primary') && button('Export')?.classList.contains('ghost'));
-  check('Full: Export is still there as the fallback', !!button('Export') && !button('Export').hidden);
+  check('Full: Apply becomes primary', button('Apply to dev')?.classList.contains('primary'));
+  check('Full: Export is hidden while the sidecar is healthy', button('Export')?.hidden === true);
   check('Full: the sidecar is asked for health', requests.some((r) => r.endsWith('/healthz')), requests.join(', '));
   const status = root()?.querySelector('.panel-status');
   check('Full: the branch line names branch and head before Apply', status?.textContent === 'dev @ abc1234', status?.textContent);
@@ -195,7 +199,21 @@ async function boot(url, respond = () => HEALTH) {
   await window.chrome.storage.local.set({ 'av:settings': { ...DEFAULTS } });
   await new Promise((r) => setTimeout(r, 50));
   check('clearing settings goes back to Light live', button('Apply to dev')?.hidden === true
-    && button('Export')?.classList.contains('primary'));
+    && button('Export')?.classList.contains('primary') && button('Export')?.hidden === false);
+  window.close();
+}
+
+// Full with the sidecar paused: Export comes back, as the status line promises.
+{
+  const { window, button } = await boot('http://localhost:3000/pricing', () => ({ ...HEALTH, killSwitch: true }));
+  window.chrome._send({ type: 'TOGGLE' });
+  await new Promise((r) => setTimeout(r, 50));
+  await window.chrome.storage.local.set({
+    'av:settings': { sidecarUrl: 'http://localhost:7420', token: 't', credential: null, allowedOrigins: ['http://localhost:3000'] },
+  });
+  await new Promise((r) => setTimeout(r, 100));
+  check('Full, paused: Export is back as a ghost fallback',
+    button('Export')?.hidden === false && button('Export')?.classList.contains('ghost'));
   window.close();
 }
 
@@ -254,6 +272,8 @@ async function boot(url, respond = () => HEALTH) {
   check('it names the repos and counts the files', strip()?.textContent.includes('app, api · 3 files'), strip()?.textContent);
   check('Apply is available during a session', button('Apply to dev')?.hidden === false);
 
+  check('Commit to dev is styled apart from Apply', button('Commit to dev')?.classList.contains('commit')
+    && !button('Apply to dev')?.classList.contains('commit'));
   button('Commit to dev').click();
   await settle();
   check('Commit to dev asks for a second click first',

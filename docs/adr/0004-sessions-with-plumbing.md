@@ -26,6 +26,8 @@ so the playground starts from what `dev` looks like.
 - **The data copy is pg_dump/pg_restore per database, roles first**, with the dumps kept
   as the session's restore point. The source is a read-only role with `pg_read_all_data`,
   which (verified) reads password hashes too.
+  *(Update, 0.2.0: in practice the source is `dev`'s superuser. `pg_read_all_data` does not
+  grant `CONNECT`, which Dealroom revokes from `PUBLIC` on every database.)*
 - **Sessions are polled, not streamed.** A session step takes minutes, not seconds, and the
   extension already polls `/healthz`; SSE would add a second token scheme for no visible
   gain.

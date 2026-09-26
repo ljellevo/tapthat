@@ -163,9 +163,9 @@
       <h2>Setting it up</h2>
       <p>This takes about two minutes. You only do it once.</p>
       <ol>
-        <li><strong>Open TapThat's settings.</strong> Right-click the TapThat icon in your browser's
-          toolbar and choose <strong>Options</strong>. If you don't see the icon, click the puzzle-piece
-          icon first.</li>
+        <li><strong>Open TapThat's settings.</strong> Click the <strong>⚙</strong> in the TapThat panel, or
+          right-click the TapThat icon in your browser's toolbar and choose <strong>Options</strong>. If you
+          don't see the icon, click the puzzle-piece icon first.</li>
         <li><strong>Paste the Sidecar URL and the access token</strong> from your developer into the
           first two boxes. Leave "Sites that get Apply to dev" empty: it fills itself in.</li>
         <li><strong>Click "Save &amp; test".</strong> You should see a green ✓ and the word
@@ -223,8 +223,9 @@
           in the same playground see your changes, and you see theirs.</li>
         <li>When you're happy, press <strong>Commit to dev</strong> (twice, to confirm). Everything from the
           session is sent to the team's test site, and it updates there a few minutes later.</li>
-        <li>Not happy? <strong>Discard all</strong> throws the session away, including any data you changed
-          while testing, and the playground goes back to how the test site looks.</li>
+        <li>Not happy? <strong>Cancel session</strong> (twice, to confirm) throws the session away, including
+          your comments and any data you changed while testing, and the playground goes back to how the test
+          site looks.</li>
       </ol>
       <div class="note">Nothing reaches the test site until someone presses <strong>Commit to dev</strong>, and
         nothing reaches the real website until your developers publish it. If Commit says someone else changed the
@@ -261,7 +262,8 @@
           then open TapThat's settings and click <strong>Test connection</strong>.</dd>
         <dt>"Can't reach the sidecar"</dt>
         <dd>The test server is off or restarting. Wait a minute and try again. If it keeps happening, tell your
-          developer. You can still press <strong>Export</strong> to copy your comments.</dd>
+          developer. Meanwhile the <strong>Export</strong> button comes back, so you can still copy your
+          comments.</dd>
         <dt>"The sidecar rejected the token"</dt>
         <dd>The access token doesn't match. Ask your developer for the current one and paste it again.</dd>
         <dt>"Your saved key no longer works"</dt>

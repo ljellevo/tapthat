@@ -1,5 +1,28 @@
 # Changelog
 
+## tapthat-server 0.2.0
+
+- **`npx tapthat-server install`** sets up a playground environment on Railway. It asks
+  three things: the platform, the dev branch and the site. If the branch or an environment
+  deploying it is missing, it offers to create them. It finds everything else and makes
+  the changes after one confirmation:
+  - a TCP proxy on dev's Postgres;
+  - the playground as a copy of dev, without the services it doesn't need;
+  - the `workspace` service, with its volume, health check, domain and variables;
+  - the GitHub token, checked for push access;
+  - a generated `tapthat.config.json`, unless the site's repository has one;
+  - a deploy, and the first data copy.
+
+  It also replaces a Postgres password that Railway stored as the literal text of its
+  `secret()` template, and gives Redis the variables its template would have. Running it
+  again changes nothing on a finished setup, and `--dry-run` shows the plan without
+  changing anything.
+- With a data copy configured (`session.snapshot`), a failing `prepare` at boot no longer
+  stops the workspace. A fresh playground's database is empty until the first Start
+  session, which runs `prepare` again after copying.
+- Docs: the copy logs in as dev's superuser. A `pg_read_all_data` role reads password
+  hashes, but it can't connect to databases whose `CONNECT` is revoked from `PUBLIC`.
+
 ## tapthat-server 0.1.2
 
 - The image's Postgres client is 18 (was 17). Railway's Postgres template runs 18, and

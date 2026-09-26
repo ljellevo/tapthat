@@ -269,7 +269,7 @@ Every repo fast-forwards to its remote branch, the snapshot (if configured) copi
 databases, `prepare` runs, and a session branch is created.
 
 - `409 session_active`: a session is running. Commit or discard it first.
-- `409 session_failed`: the last one failed. Discard it first.
+- `409 session_failed`: the last one failed. Cancel it first (`POST /api/session/discard`).
 
 ### `POST /api/session/commit`
 

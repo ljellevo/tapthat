@@ -129,9 +129,11 @@ committed.
   never touches `main`, and `dev` stays reviewable in git like any other branch, but treat
   the token accordingly. `TAPTHAT_GIT_TOKEN` should reach only the workspace's
   repositories, and only their `dev` branch if your host can scope it.
-- **A public read path into `dev`'s data.** The copy reads `dev`'s Postgres through a TCP
-  proxy. Use a dedicated role with `pg_read_all_data` only, and a long password. That role
-  can read everything, **password hashes included**, so it must not exist in production.
+- **A public path into `dev`'s data.** The copy reads `dev`'s Postgres through a TCP proxy,
+  as `dev`'s superuser. A `pg_read_all_data` role would be narrower, but it can't open
+  databases whose `CONNECT` is revoked from `PUBLIC`. Keep that password long and random:
+  `tapthat-server install` replaces one that Railway stored as the literal text of its
+  `secret()` template. `dev` must never hold production data.
 - **The dumps live on the workspace volume** until the next Start, including role password
   hashes. The volume is as sensitive as `dev`'s database.
 - **Connection URLs are secrets.** They are registered for scrubbing, so a failed copy
