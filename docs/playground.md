@@ -277,8 +277,9 @@ Everything in [setup.md's reference](setup.md#configuration-reference), plus:
 | `session.snapshot.stopServers` | none | | Dev servers stopped while their databases are replaced |
 | `session.onStart` | none | | Extra commands after the copy, for data that isn't in Postgres |
 
-The image carries `pg_dump` 17. Build with `--build-arg PG_MAJOR=<n>` to match another
-server version: `pg_dump` refuses servers newer than itself.
+The image carries `pg_dump` 18, Railway's current Postgres template. `pg_dump` reads older
+servers fine but refuses newer ones: for a newer server, build with
+`--build-arg PG_MAJOR=<n>`.
 
 ## Not covered yet
 
