@@ -337,6 +337,8 @@ console.log('behind a gateway, every service runs in the workspace');
   const names = (env) => Object.keys(rw.envs[env]?.services ?? {}).map((id) => rw.names[id]).sort();
   const vars = (env, name) => Object.fromEntries(Object.entries(rw.envs[env].services[Object.entries(rw.names).find(([, n]) => n === name)[0]].variables).map(([k, v]) => [k, v.value]));
   eq('the playground is the gateway, the databases and the workspace', names('tapthat'), ['gateway', 'postgres', 'redis', 'workspace']);
+  const unbound = Object.values(rw.envs.tapthat.services).flatMap((svc) => Object.entries(svc.variables).filter(([, v]) => v.unbound).map(([k]) => k));
+  eq('every reference was saved once what it names existed', unbound, []);
   eq('the gateway points at the dev servers in the workspace',
     [vars('tapthat', 'gateway').APP_UPSTREAM, vars('tapthat', 'gateway').HOMEPAGE_UPSTREAM],
     ['${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3000', '${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3001']);

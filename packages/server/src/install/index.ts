@@ -356,23 +356,6 @@ async function installInner(opts: InstallOptions): Promise<number> {
     if (redis) pushRedisFix(actions, rw, opts.playground, redis);
   }
 
-  // Kept services that still point at services the playground doesn't have.
-  const rewriteKept = async () => {
-    for (const [service, vars] of keptRewrites(playground!, topo, plan.ports)) {
-      await rw.setPlain(service, opts.playground, vars);
-      await rw.redeploy(service, opts.playground);
-    }
-  };
-  if (!playground) {
-    actions.push({ label: `point the kept services at the workspace where they referred to ${[...topo.included, ...topo.dropped].join('/')}`, run: rewriteKept });
-  } else {
-    const pending = keptRewrites(playground, topo, plan.ports);
-    if (pending.size) {
-      const what = [...pending].map(([svc, vars]) => `${svc} (${Object.keys(vars).join(', ')})`).join('; ');
-      actions.push({ label: `point ${what} at the workspace instead of services the playground leaves out`, run: rewriteKept });
-    }
-  }
-
   // The workspace service.
   const workspace = playground?.find((s) => s.source.image?.includes('tapthat-server')) ?? playground?.find((s) => s.name === WORKSPACE);
   const wsName = workspace?.name ?? WORKSPACE;
@@ -405,6 +388,25 @@ async function installInner(opts: InstallOptions): Promise<number> {
       },
     });
   } else ok(`${opts.playground} has the ${wsName} service`);
+
+  // Kept services that still point at services the playground doesn't have. After
+  // the workspace exists: Railway resolves a reference when it is saved, and one to
+  // a service not there yet stays empty for good.
+  const rewriteKept = async () => {
+    for (const [service, vars] of keptRewrites(playground!, topo, plan.ports)) {
+      await rw.setPlain(service, opts.playground, vars);
+      await rw.redeploy(service, opts.playground);
+    }
+  };
+  if (!playground) {
+    actions.push({ label: `point the kept services at the workspace where they referred to ${[...topo.included, ...topo.dropped].join('/')}`, run: rewriteKept });
+  } else {
+    const pending = keptRewrites(playground, topo, plan.ports);
+    if (pending.size) {
+      const what = [...pending].map(([svc, vars]) => `${svc} (${Object.keys(vars).join(', ')})`).join('; ');
+      actions.push({ label: `point ${what} at the workspace instead of services the playground leaves out`, run: rewriteKept });
+    }
+  }
   if (workspace?.deploy?.healthcheckPath !== '/__tapthat/healthz' || !workspace || Number(workspace.deploy?.healthcheckTimeout) < 900) {
     actions.push({
       label: `${wsName}: health check /__tapthat/healthz with 15 minutes to boot (the first boot installs every repo)`,
