@@ -290,13 +290,20 @@ export async function loadConfig(
     }
   }
   if (config.proxy.enabled || config.devServer.start) {
-    // Every dev server needs its own port, and none may take the sidecar's.
+    // Every dev server needs its own port, and none may take the sidecar's. The
+    // proxy may point at any of them (a playground behind a gateway serves admin
+    // on the workspace's domain), so its target must only avoid the sidecar's.
     const seen = new Map<number, string>();
     const targets = config.repos
       .filter((r) => r.devServer)
-      .map((r) => ({ name: r.name, url: r.primary ? (config.proxy.target ?? r.devServer!.url) : r.devServer!.url }));
+      .map((r) => ({ name: r.name, url: r.devServer!.url, shared: false }));
+    if (config.proxy.enabled && config.proxy.target) targets.push({ name: 'proxy', url: config.proxy.target, shared: true });
     for (const target of targets) {
-      const label = config.repos.length > 1 ? `repos[${target.name}].devServer.url` : 'devServerUrl';
+      const label = target.shared
+        ? 'proxy.target'
+        : config.repos.length > 1
+          ? `repos[${target.name}].devServer.url`
+          : 'devServerUrl';
       try {
         const dev = new URL(target.url);
         const devPort = Number(dev.port || (dev.protocol === 'https:' ? 443 : 80));
@@ -307,10 +314,10 @@ export async function loadConfig(
             `${label}: ${dev.origin} is the sidecar's own port (${config.port}). ` +
               'Give the dev server a different port, e.g. TAPTHAT_DEV_SERVER=http://localhost:3001',
           );
-        } else if (seen.has(devPort)) {
+        } else if (seen.has(devPort) && !target.shared) {
           problems.push(`${label}: port ${devPort} is also used by ${seen.get(devPort)}'s dev server`);
         }
-        seen.set(devPort, target.name);
+        if (!target.shared) seen.set(devPort, target.name);
       } catch {
         problems.push(`${label}: "${target.url}" is not a valid URL (override with TAPTHAT_DEV_SERVER)`);
       }

@@ -120,6 +120,37 @@ it can't work out is reported, not guessed.
 | `--yes` | Take the defaults and the plan without asking (CI) |
 | `--git-token-stdin` | Read the workspace's GitHub token from stdin |
 
+#### Behind a gateway
+
+If your sites share one domain behind a reverse proxy, for example Caddy sending `/` to
+the homepage or the app depending on a session cookie, pick the proxy as the site. The
+installer recognizes it because its repository has no `dev` or `start` script. Then:
+
+- **The gateway stays.** It runs in the playground as it does in `dev`, with the same
+  routing, but its upstreams point at the dev servers inside the workspace
+  (`${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3000`). TapThat never needs to know your routes.
+- **Everything behind it can be changed.** Every repository service the gateway reaches
+  over the private network runs as a dev server, and so does everything those reach:
+  typically the sites, the API and the services behind the API. Only databases and
+  services without a `dev` script stay as their own services.
+- **A site on its own domain** (an admin console, say) runs in the workspace too, and the
+  workspace's own domain serves it, beside the sidecar under `/__tapthat`. If there are
+  several, the installer serves the first and warns about the rest.
+- **Links follow.** A variable that links to the gateway's domain keeps doing so. A link to
+  the admin's domain points at the workspace's domain. The extension may run on both
+  (`TAPTHAT_ALLOWED_ORIGINS`).
+- `tapthat.config.json` goes to the main app's repository (`app`, `web`, …), not the
+  gateway's. Dependencies are pushed first on Commit.
+
+Three things to check on your side:
+- Dev servers must listen on all interfaces, so the gateway can reach them. `next dev` and
+  Express do by default.
+- Each app on the shared domain needs its own asset path. Two Next.js apps can't both
+  serve `/_next`: give all but one an `assetPrefix` and route that prefix to it, unstripped.
+  Next's dev server sends hot updates only on the prefixed socket.
+- Size the workspace for the number of dev servers: memory, and a volume that holds every
+  `node_modules`.
+
 The rest of this section is what the installer sets up, for doing it by hand or on
 another platform. The example is Dealroom (`app` + `api`); any set of repositories works
 the same way.

@@ -246,6 +246,70 @@ console.log('a second run changes nothing');
   eq('no second data copy', sidecar.starts, 1);
 }
 
+console.log('behind a gateway, every service runs in the workspace');
+{
+  reset();
+  // Dealroom with resources/railway/gateway in front of homepage and app, which
+  // have no domains of their own any more; admin keeps its own.
+  const state = JSON.parse(readFileSync(railwayFile, 'utf8'));
+  const prod = state.envs.production.services;
+  const idOf = (name) => Object.entries(state.names).find(([, n]) => n === name)[0];
+  state.names['svc-gateway'] = 'gateway';
+  prod['svc-gateway'] = {
+    source: { repo: 'dealroom-no/resources', branch: 'main' },
+    networking: { serviceDomains: { 'gateway-production.up.railway.app': {} } },
+    variables: {
+      PORT: { value: '8080' },
+      APP_UPSTREAM: { value: '${{app.RAILWAY_PRIVATE_DOMAIN}}:3000' },
+      HOMEPAGE_UPSTREAM: { value: '${{homepage.RAILWAY_PRIVATE_DOMAIN}}:3001' },
+    },
+    deploy: {},
+  };
+  for (const name of ['app', 'homepage', 'api']) prod[idOf(name)].networking.serviceDomains = {};
+  prod[idOf('api')].variables.WEB_ORIGIN = { value: 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}' };
+  state.envs.dev = JSON.parse(JSON.stringify(state.envs.production));
+  for (const s of Object.values(state.envs.dev.services)) if (s.source.repo) s.source.branch = 'dev';
+  writeFileSync(railwayFile, JSON.stringify(state));
+  const gh = JSON.parse(readFileSync(ghFile, 'utf8'));
+  for (const repo of ['admin', 'homepage', 'auth', 'payment', 'storage']) {
+    gh.repos[`dealroom-no/${repo}`].branches.main = {
+      'package.json': JSON.stringify({ scripts: { dev: 'tsx watch src/main.ts', typecheck: 'tsc --noEmit' } }),
+      'package-lock.json': '{}',
+    };
+  }
+  // resources: Caddyfiles and documentation, nothing to run.
+  gh.repos['dealroom-no/resources'].branches.main = { 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) };
+  for (const r of Object.values(gh.repos)) r.branches.dev = r.branches.main;
+  writeFileSync(ghFile, JSON.stringify(gh));
+
+  const edgeFlags = ['--yes', '--branch', 'dev', '--site', 'gateway', '--git-token-stdin'];
+  const r = await install(edgeFlags, { stdin: 'good-token' });
+  if (process.env.SHOW_OUTPUT) console.log(r.output);
+  check('exits 0', r.code === 0, r.output);
+  const { rw, gh: after } = readState();
+  const names = (env) => Object.keys(rw.envs[env]?.services ?? {}).map((id) => rw.names[id]).sort();
+  const vars = (env, name) => Object.fromEntries(Object.entries(rw.envs[env].services[Object.entries(rw.names).find(([, n]) => n === name)[0]].variables).map(([k, v]) => [k, v.value]));
+  eq('the playground is the gateway, the databases and the workspace', names('tapthat'), ['gateway', 'postgres', 'redis', 'workspace']);
+  eq('the gateway points at the dev servers in the workspace',
+    [vars('tapthat', 'gateway').APP_UPSTREAM, vars('tapthat', 'gateway').HOMEPAGE_UPSTREAM],
+    ['${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3000', '${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3001']);
+  const cfg = JSON.parse(after.repos['dealroom-no/app'].branches.dev['tapthat.config.json'] ?? '{}');
+  eq('the config, committed to the main app, names all seven', (cfg.repos ?? []).map((x) => x.name).sort(),
+    ['admin', 'api', 'app', 'auth', 'homepage', 'payment', 'storage']);
+  check('…and nothing was committed to the gateway\'s repository', !after.repos['dealroom-no/resources'].branches.dev['tapthat.config.json']);
+  eq('…with the workspace\'s own domain serving admin', cfg.proxy, { target: 'http://localhost:3400' });
+  const w = vars('tapthat', 'workspace');
+  eq('the extension may run on both sites', w.TAPTHAT_ALLOWED_ORIGINS, 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}},https://${{RAILWAY_PUBLIC_DOMAIN}}');
+  eq('the API\'s link to the site stays the gateway\'s', w.API_WEB_ORIGIN, 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}');
+  check('the token was checked against every repository', /can push to dealroom-no\/app, .*dealroom-no\/storage/.test(r.output), r.output);
+  check('the gateway gets a domain in the playground, and is listed first', r.output.includes('Sites        https://gateway-tapthat.up.railway.app, http://'), r.output);
+
+  const again = await install(edgeFlags);
+  const later = readState();
+  check('a second run exits 0', again.code === 0, again.output);
+  eq('…and changes nothing', mutations(later.rw.log.slice(rw.log.length)), []);
+}
+
 console.log('failures stop early and say why');
 {
   reset();

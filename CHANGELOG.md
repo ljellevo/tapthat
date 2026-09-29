@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **The installer works behind a gateway.** Pick a reverse proxy in front of your sites as
+  the site, and it stays as it runs in dev, pointed at the workspace. Every repository
+  service behind it runs as a dev server, so any of them can be changed, and a site on its
+  own domain (an admin console) is served on the workspace's domain.
+  See [Behind a gateway](docs/playground.md#behind-a-gateway).
+- The workspace's proxy may front a dev server other than the primary repository's
+  (`proxy.target`). This used to be reported as two dev servers sharing a port.
+- `install --dry-run` on a project without the dev branch yet reads each repository's
+  scripts from its default branch.
+
 ## tapthat-server 0.2.0
 
 - **`npx tapthat-server install`** sets up a playground environment on Railway. It asks

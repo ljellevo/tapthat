@@ -67,10 +67,12 @@ export function environmentDeploying(
 }
 
 /** The site reviewers most likely comment on: a repo service with a public domain, preferring common names. */
+const PREFERRED_SITES = ['app', 'web', 'frontend', 'site', 'www', 'client'];
+
 export function suggestSite(services: ServiceSpec[], withDomains: Set<string>): string | null {
   const candidates = services.filter((s) => isRepoService(s) && withDomains.has(s.name));
-  const preferred = ['app', 'web', 'frontend', 'site', 'www', 'client'];
-  for (const name of preferred) {
+  // A gateway, where there is one, is the way in to the rest.
+  for (const name of ['gateway', ...PREFERRED_SITES]) {
     const hit = candidates.find((s) => s.name === name);
     if (hit) return hit.name;
   }
@@ -79,6 +81,10 @@ export function suggestSite(services: ServiceSpec[], withDomains: Set<string>): 
 
 export interface Topology {
   site: string;
+  /** The site is a gateway in front of the dev servers, and stays as it runs in dev. */
+  edge: boolean;
+  /** Behind a gateway: a public service the gateway doesn't serve, served on the workspace's own domain. */
+  proxied: string | null;
   /** Run inside the workspace, as dev servers: the site and the repo services it calls directly. */
   included: string[];
   /** Stay as their own services in the playground: what the included ones depend on. */
@@ -95,22 +101,44 @@ export interface Topology {
  * depend on (databases, other services, transitively) stays as its own
  * service. A reference to another service's *public* domain is a link, not a
  * dependency: it is pointed at the workspace instead.
+ *
+ * With `edge`, the site is a gateway (a proxy that can't run as a dev server)
+ * in front of the real sites. It stays as it runs in dev, pointed at the
+ * workspace, and every repo service it reaches runs as a dev server, and so
+ * does everything those reach in turn: every one of them can be changed. So do
+ * the other public services, which the workspace's own domain serves.
  */
-export function topology(services: ServiceSpec[], site: string): Topology {
+export function topology(services: ServiceSpec[], site: string, edge?: EdgeOptions): Topology {
   const byName = new Map(services.map((s) => [s.name, s]));
   const siteSpec = byName.get(site);
   if (!siteSpec) throw new Error(`No service named "${site}".`);
+  // The repo services a service calls over the private network.
+  const privateRepoRefs = (spec: ServiceSpec) =>
+    referencesOf(spec).flatMap((r) => {
+      const target = byName.get(r.service);
+      return r.variable === 'RAILWAY_PRIVATE_DOMAIN' && target && isRepoService(target) ? [target.name] : [];
+    });
 
-  const included = [site];
-  for (const ref of referencesOf(siteSpec)) {
-    const target = byName.get(ref.service);
-    if (ref.variable === 'RAILWAY_PRIVATE_DOMAIN' && target && isRepoService(target) && !included.includes(target.name)) {
-      included.push(target.name);
+  let included = [site];
+  let proxied: string | null = null;
+  if (edge) {
+    const others = edge.publicServices.filter((n) => n !== site && edge.runnable(n));
+    included = [];
+    const queue = [...privateRepoRefs(siteSpec), ...others];
+    while (queue.length) {
+      const name = queue.shift()!;
+      if (included.includes(name) || name === site || !edge.runnable(name)) continue;
+      included.push(name);
+      queue.push(...privateRepoRefs(byName.get(name)!));
     }
+    if (!included.length) throw new Error(`${site} reaches no service that can run as a dev server.`);
+    proxied = others[0] ?? null;
+  } else {
+    for (const name of privateRepoRefs(siteSpec)) if (!included.includes(name)) included.push(name);
   }
 
-  const kept = new Set<string>();
-  const queue = [...included];
+  const kept = new Set<string>(edge ? [site] : []);
+  const queue = [...included, ...(edge ? [site] : [])];
   while (queue.length) {
     const spec = byName.get(queue.shift()!);
     if (!spec) continue;
@@ -129,12 +157,24 @@ export function topology(services: ServiceSpec[], site: string): Topology {
   const redis = redises.find((n) => kept.has(n)) ?? null;
   return {
     site,
+    edge: !!edge,
+    proxied,
     included,
     kept: [...kept].sort(),
     dropped: services.map((s) => s.name).filter((n) => !included.includes(n) && !kept.has(n)).sort(),
     postgres,
     redis,
   };
+}
+
+/**
+ * The repository that holds tapthat.config.json and is cloned first: the site,
+ * or behind a gateway the likeliest main app among what runs in the workspace.
+ */
+export function primaryOf(topo: Topology): string {
+  if (!topo.edge) return topo.site;
+  const candidates = topo.included.filter((n) => n !== topo.proxied);
+  return PREFERRED_SITES.find((n) => candidates.includes(n)) ?? candidates[0] ?? topo.included[0]!;
 }
 
 /** The port a service listens on: its literal PORT, or the next free one. */
@@ -161,10 +201,33 @@ export function assignPorts(services: ServiceSpec[], included: string[]): Map<st
 /** Variables the platform or the sidecar sets for a dev server itself. */
 const SKIPPED = /^(PORT|HOSTNAME|NODE_ENV|RAILWAY_[A-Z_]+)$/;
 
+/** Behind a gateway, what `topology()` needs to know about the other services. */
+export interface EdgeOptions {
+  /** Repo services with a public domain of their own in dev. */
+  publicServices: string[];
+  /** Whether a service can run as a dev server: its repository has a dev or start script. */
+  runnable: (name: string) => boolean;
+}
+
+/** Where a gateway sits, for rewriting links to public domains. */
+type Edge = { site: string; proxied: string | null };
+const edgeOf = (topo: Topology): Edge | undefined => (topo.edge ? { site: topo.site, proxied: topo.proxied } : undefined);
+
+/**
+ * A link to a service's public domain, in the playground: the workspace's own
+ * domain (`self`); behind a gateway, the gateway's, except for the service the
+ * workspace's domain itself serves.
+ */
+function publicDomainRef(service: string, self: string, edge?: Edge): string {
+  if (!edge || service === edge.proxied) return self;
+  return `\${{${edge.site}.RAILWAY_PUBLIC_DOMAIN}}`;
+}
+
 /**
  * One included service's variable, rewritten for life inside the workspace:
  * - another included service's private domain → localhost and its dev port
- * - any public domain → the workspace's own (the playground has one site)
+ * - any public domain → the workspace's own (the playground has one site), or
+ *   behind a gateway the gateway's; a link to the gateway itself stays
  * - another included service's variable → the workspace's copy of it
  * - its own variables (`${{X}}`) → the workspace's copy (`${{API_X}}`)
  * - kept services, databases and shared variables → unchanged; they exist in
@@ -175,6 +238,7 @@ export function rewriteValue(
   owner: string,
   included: string[],
   ports: Map<string, number>,
+  edge?: Edge,
 ): string {
   const out = value.replace(
     /(https?:\/\/)?\$\{\{\s*([A-Za-z0-9_-]+)\.RAILWAY_PRIVATE_DOMAIN\s*\}\}(:\d+)?/g,
@@ -184,7 +248,7 @@ export function rewriteValue(
   // One pass, so a rewritten reference is never rewritten again.
   return out.replace(ANY_REF, (whole, service: string | undefined, variable: string) => {
     if (service) {
-      if (variable === 'RAILWAY_PUBLIC_DOMAIN') return '${{RAILWAY_PUBLIC_DOMAIN}}';
+      if (variable === 'RAILWAY_PUBLIC_DOMAIN') return service === edge?.site ? whole : publicDomainRef(service, '${{RAILWAY_PUBLIC_DOMAIN}}', edge);
       return included.includes(service) ? `\${{${prefixOf(service)}_${variable}}}` : whole;
     }
     if (variable === 'PORT') return String(ports.get(owner));
@@ -196,6 +260,8 @@ export function rewriteValue(
 
 export interface WorkspacePlan {
   topology: Topology;
+  /** The repository that holds tapthat.config.json. */
+  primary: string;
   ports: Map<string, number>;
   /** Workspace service variables, raw (Railway resolves the references). */
   variables: Record<string, string>;
@@ -211,22 +277,25 @@ export function planWorkspace(input: {
   site: string;
   branch: string;
   repoFacts: Map<string, RepoFacts>;
+  edge?: EdgeOptions;
 }): WorkspacePlan {
   const { services, site, branch } = input;
-  const topo = topology(services, site);
+  const topo = topology(services, site, input.edge);
+  const edge = edgeOf(topo);
+  const primary = primaryOf(topo);
   const ports = assignPorts(services, topo.included);
   const byName = new Map(services.map((s) => [s.name, s]));
   const warnings: string[] = [];
   const variables: Record<string, string> = {};
   const secretKeys = new Set<string>();
 
-  const repos = topo.included.map((name) => {
+  const repos = [primary, ...topo.included.filter((n) => n !== primary)].map((name) => {
     const spec = byName.get(name)!;
     const facts = input.repoFacts.get(name) ?? { scripts: {}, lockfile: 'npm' };
     const env: Record<string, string> = {};
     for (const [key, raw] of Object.entries(spec.variables)) {
       if (SKIPPED.test(key)) continue;
-      const rewritten = rewriteValue(raw, name, topo.included, ports);
+      const rewritten = rewriteValue(raw, name, topo.included, ports, edge);
       // A value that is now just a URL to another dev server needs no workspace copy.
       if (/^https?:\/\/localhost:\d+[^$]*$/.test(rewritten)) {
         env[key] = rewritten;
@@ -251,7 +320,7 @@ export function planWorkspace(input: {
 
     return {
       name,
-      ...(name === site ? { primary: true } : { url: `https://github.com/${spec.source.repo}.git` }),
+      ...(name === primary ? { primary: true } : { url: `https://github.com/${spec.source.repo}.git` }),
       description: `The ${name} service (${spec.source.repo}).`,
       ...(facts.scripts.typecheck ? { verifyCommand: 'npm run typecheck' } : {}),
       devServer: {
@@ -264,8 +333,15 @@ export function planWorkspace(input: {
     };
   });
 
-  // Dependencies first, so an app never deploys against an API that lacks what it needs.
-  const deployOrder = [...topo.included.filter((n) => n !== site), site];
+  // Dependencies first, so an app never deploys against an API that lacks what it
+  // needs. Behind a gateway, what was reached last is what the rest depends on.
+  const deployOrder = topo.edge ? [...topo.included].reverse() : [...topo.included.filter((n) => n !== site), site];
+  if (topo.edge) {
+    const unserved = (input.edge?.publicServices ?? []).filter((n) => n !== site && n !== topo.proxied && topo.included.includes(n));
+    if (unserved.length) {
+      warnings.push(`${unserved.join(', ')}: public in dev, but the workspace's domain serves only ${topo.proxied}; reach ${unserved.length === 1 ? 'it' : 'them'} through ${site}, or set proxy.target by hand`);
+    }
+  }
 
   const session: Record<string, unknown> = {};
   if (topo.postgres) {
@@ -288,6 +364,7 @@ export function planWorkspace(input: {
   const config = {
     branch,
     git: { mode: 'session', deployOrder },
+    ...(topo.proxied ? { proxy: { target: `http://localhost:${ports.get(topo.proxied)}` } } : {}),
     ...(migrates
       ? {
           agent: {
@@ -301,7 +378,7 @@ export function planWorkspace(input: {
     ...(Object.keys(session).length ? { session } : {}),
   };
 
-  return { topology: topo, ports, variables, secretKeys, config, warnings };
+  return { topology: topo, primary, ports, variables, secretKeys, config, warnings };
 }
 
 /** The literal text Railway sometimes stores instead of evaluating its secret() template function. */
@@ -322,7 +399,8 @@ export const REDIS_TEMPLATE_VARIABLES: Record<string, string> = {
  * A kept service's variable, rewritten for the playground, where the included
  * services live inside the workspace and the dropped ones do not exist. A
  * reference to a service that is not there resolves to an empty string, so
- * every such reference is pointed at the workspace; the rest is unchanged.
+ * every such reference is pointed at the workspace (a link to a public domain,
+ * behind a gateway, at the gateway); the rest is unchanged.
  */
 export function rewriteForKept(value: string, topo: Topology, ports: Map<string, number>): string {
   const present = new Set(topo.kept);
@@ -333,7 +411,7 @@ export function rewriteForKept(value: string, topo: Topology, ports: Map<string,
   );
   return withPrivate.replace(CROSS_REF, (whole, service: string, variable: string) => {
     if (present.has(service) || service === WORKSPACE) return whole;
-    if (variable === 'RAILWAY_PUBLIC_DOMAIN') return `\${{${WORKSPACE}.RAILWAY_PUBLIC_DOMAIN}}`;
+    if (variable === 'RAILWAY_PUBLIC_DOMAIN') return publicDomainRef(service, `\${{${WORKSPACE}.RAILWAY_PUBLIC_DOMAIN}}`, edgeOf(topo));
     if (topo.included.includes(service)) return `\${{${WORKSPACE}.${prefixOf(service)}_${variable}}}`;
     return whole;
   });
@@ -367,17 +445,23 @@ export function danglingReferences(playground: ServiceSpec[]): string[] {
 }
 
 /** The sidecar's own settings on the workspace service; none of these is a secret. */
-export function baseVariables(siteRepo: string, site: string): Record<string, string> {
+export function baseVariables(primaryRepo: string, primary: string, topo?: Topology): Record<string, string> {
+  // Behind a gateway, pages come from the gateway's domain, and from the
+  // workspace's own only when it serves a site too.
+  const edge = topo && edgeOf(topo);
+  const origins = edge
+    ? [`https://\${{${edge.site}.RAILWAY_PUBLIC_DOMAIN}}`, ...(edge.proxied ? ['https://${{RAILWAY_PUBLIC_DOMAIN}}'] : [])]
+    : ['https://${{RAILWAY_PUBLIC_DOMAIN}}'];
   return {
     NODE_ENV: 'development',
     PORT: String(SIDECAR_PORT),
     TAPTHAT_ENABLE: '1',
-    TAPTHAT_PROXY: '1',
+    TAPTHAT_PROXY: edge && !edge.proxied ? '0' : '1',
     TAPTHAT_START_DEV_SERVER: '1',
     TAPTHAT_WORKSPACE_ROOT: '/workspace/repos',
-    TAPTHAT_REPO_ROOT: `/workspace/repos/${site}`,
-    TAPTHAT_REPO_URL: `https://github.com/${siteRepo}.git`,
-    TAPTHAT_ALLOWED_ORIGINS: 'https://${{RAILWAY_PUBLIC_DOMAIN}}',
+    TAPTHAT_REPO_ROOT: `/workspace/repos/${primary}`,
+    TAPTHAT_REPO_URL: `https://github.com/${primaryRepo}.git`,
+    TAPTHAT_ALLOWED_ORIGINS: origins.join(','),
   };
 }
 
