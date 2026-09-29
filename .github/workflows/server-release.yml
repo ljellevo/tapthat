@@ -1,7 +1,9 @@
 name: Server release
 
-# Publishes tapthat-server to npm and ghcr.io/<owner>/tapthat-server.
-# Cut a release by pushing a tag:  git tag server-v0.2.0 && git push origin server-v0.2.0
+# Publishes tapthat-server to npm and ghcr.io/<owner>/tapthat-server, with the
+# extension's version. release.yml starts it after each release, on that
+# release's tag; it can also be run by hand (Actions → Server release) with a
+# version whose tag exists.
 #
 # npm uses trusted publishing: no token. The package's npm settings name this
 # repository and this workflow file (server-release.yml) as its publisher, and
@@ -11,8 +13,14 @@ name: Server release
 # other, and each can be re-run on its own.
 
 on:
-  push:
-    tags: ['server-v*']
+  # Dispatched, not a tag push: a tag pushed with the workflow token starts no
+  # other workflow, and npm's trusted publisher names this file, so publishing
+  # stays here rather than moving into release.yml.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (major.minor.patch), the extension release it goes with'
+        required: true
 
 permissions:
   contents: read
@@ -24,6 +32,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -32,15 +42,16 @@ jobs:
 
       - run: npm ci
 
-      - name: Version from the tag
+      - name: Version
         id: version
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#server-v}"
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "tag must be server-vMAJOR.MINOR.PATCH, got $GITHUB_REF_NAME" >&2
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must be MAJOR.MINOR.PATCH, got $VERSION" >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Typecheck, test and build
         run: npm run check -w tapthat-shared && npm run check -w tapthat-server
@@ -55,6 +66,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.version }}
 
       - uses: actions/setup-node@v4
         with:
@@ -97,6 +110,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.version }}
 
       - name: Stamp the version
         env:

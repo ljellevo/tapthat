@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **One version for the extension and the server.** Each release now also publishes
+  `tapthat-server` to npm and ghcr with the extension's version, so the server jumps from
+  0.2.0 to the next release's number. The `server-v*` tags are retired.
 - **The installer works behind a gateway.** Pick a reverse proxy in front of your sites as
   the site, and it stays as it runs in dev, pointed at the workspace. Every repository
   service behind it runs as a dev server, so any of them can be changed, and a site on its

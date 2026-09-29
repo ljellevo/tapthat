@@ -3,11 +3,14 @@ name: Release
 on:
   push:
     branches: [main]
-    # Without this, a sidecar-only commit cuts a pointless extension release.
+    # One version for the extension and tapthat-server: a change to either
+    # releases both (the server through server-release.yml, below).
     paths:
       - 'packages/client/**'
       - 'packages/shared/**'
+      - 'packages/server/**'
       - '.github/workflows/release.yml'
+      - '.github/workflows/server-release.yml'
   workflow_dispatch:
     inputs:
       version:
@@ -16,6 +19,8 @@ on:
 
 permissions:
   contents: write
+  # To start server-release.yml.
+  actions: write
 
 concurrency:
   group: release
@@ -104,3 +109,11 @@ jobs:
           gh release create "${{ steps.version.outputs.version }}" packages/client/tapthat.zip \
             --title "${{ steps.version.outputs.version }}" \
             --notes-file notes.md
+
+      # A workflow run can't be started by a tag the workflow token pushed, but
+      # it can be dispatched, on that tag.
+      - name: Publish tapthat-server with the same version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh workflow run server-release.yml --ref "$VERSION" -f version="$VERSION"
