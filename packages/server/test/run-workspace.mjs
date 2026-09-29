@@ -117,6 +117,25 @@ const wsDirs = makeWorkspace('main');
   check('duplicate repo names, shared ports and unknown mirror repos are all reported',
     ['listed twice', 'also used by', 'unknown repo "nope"'].every((s) => clash.problems.some((p) => p.includes(s))),
     clash.problems.join('; '));
+
+  // Behind a gateway the workspace's own domain serves admin, not the primary.
+  const toAdmin = join(scratch, 'proxy-to-admin');
+  const proxied = (target) => JSON.stringify({
+    proxy: { target },
+    repos: [
+      { name: 'app', primary: true, devServer: { url: 'http://localhost:3000' } },
+      { name: 'admin', devServer: { url: 'http://localhost:3400' } },
+    ],
+  });
+  const proxyEnv = { TAPTHAT_PROXY: '1', TAPTHAT_START_DEV_SERVER: '1', TAPTHAT_DEV_COMMAND: 'x', PORT: '8080' };
+  write(join(toAdmin, 'tapthat.config.json'), proxied('http://localhost:3400'));
+  const other = await loadConfig(toAdmin, proxyEnv);
+  check('the proxy may front a dev server other than the primary',
+    other.problems.length === 0 && other.config.proxy.target === 'http://localhost:3400', other.problems.join('; '));
+  write(join(toAdmin, 'tapthat.config.json'), proxied('http://localhost:8080'));
+  const onSidecar = await loadConfig(toAdmin, proxyEnv);
+  check("a proxy target on the sidecar's own port is still reported",
+    onSidecar.problems.some((p) => p.startsWith('proxy.target:') && p.includes("sidecar's own port")), onSidecar.problems.join('; '));
 }
 
 // ── The HTTP server over a two-repo workspace ────────────────────────────────
