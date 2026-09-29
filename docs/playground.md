@@ -142,9 +142,15 @@ installer recognizes it because its repository has no `dev` or `start` script. T
 - `tapthat.config.json` goes to the main app's repository (`app`, `web`, …), not the
   gateway's. Dependencies are pushed first on Commit.
 
-Three things to check on your side:
+Four things to check on your side:
 - Dev servers must listen on all interfaces, so the gateway can reach them. `next dev` and
   Express do by default.
+- **Next.js dev servers refuse a hot-reload socket whose `Origin` isn't `localhost`**, and a
+  page whose socket is refused never hydrates: it renders, but nothing on it responds. Have
+  the gateway pass a websocket upgrade from its own domain on with `Origin: http://localhost`,
+  and leave any other Origin alone (in Caddy: a `request_header` on a matcher for
+  `Upgrade: websocket` with a same-origin `Origin`), or list the domain in each app's
+  `allowedDevOrigins`. The workspace's own proxy already does this for the site it serves.
 - Each app on the shared domain needs its own asset path. Two Next.js apps can't both
   serve `/_next`: give all but one an `assetPrefix` and route that prefix to it, unstripped.
   Next's dev server sends hot updates only on the prefixed socket.
