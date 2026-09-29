@@ -330,6 +330,12 @@ async function installInner(opts: InstallOptions): Promise<number> {
           await rw.deleteService(s.name, opts.playground);
         }
         playground = await load(opts.playground);
+        // Railway can store its secret() template as text in the copy, even when dev's is fine.
+        const pg = pgName && playground.find((s) => s.name === pgName);
+        if (pg && isLiteralTemplate(pg.variables.POSTGRES_PASSWORD)) {
+          await rotatePostgres(rw, opts.playground, pgName!);
+          ok(`${opts.playground}/${pgName}: replaced the guessable superuser password Railway gave the copy`);
+        }
       },
     });
   } else {
@@ -348,23 +354,6 @@ async function installInner(opts: InstallOptions): Promise<number> {
     }
     const redis = redisName && playground.find((s) => s.name === redisName);
     if (redis) pushRedisFix(actions, rw, opts.playground, redis);
-  }
-
-  // Kept services that still point at services the playground doesn't have.
-  const rewriteKept = async () => {
-    for (const [service, vars] of keptRewrites(playground!, topo, plan.ports)) {
-      await rw.setPlain(service, opts.playground, vars);
-      await rw.redeploy(service, opts.playground);
-    }
-  };
-  if (!playground) {
-    actions.push({ label: `point the kept services at the workspace where they referred to ${[...topo.included, ...topo.dropped].join('/')}`, run: rewriteKept });
-  } else {
-    const pending = keptRewrites(playground, topo, plan.ports);
-    if (pending.size) {
-      const what = [...pending].map(([svc, vars]) => `${svc} (${Object.keys(vars).join(', ')})`).join('; ');
-      actions.push({ label: `point ${what} at the workspace instead of services the playground leaves out`, run: rewriteKept });
-    }
   }
 
   // The workspace service.
@@ -399,6 +388,25 @@ async function installInner(opts: InstallOptions): Promise<number> {
       },
     });
   } else ok(`${opts.playground} has the ${wsName} service`);
+
+  // Kept services that still point at services the playground doesn't have. After
+  // the workspace exists: Railway resolves a reference when it is saved, and one to
+  // a service not there yet stays empty for good.
+  const rewriteKept = async () => {
+    for (const [service, vars] of keptRewrites(playground!, topo, plan.ports)) {
+      await rw.setPlain(service, opts.playground, vars);
+      await rw.redeploy(service, opts.playground);
+    }
+  };
+  if (!playground) {
+    actions.push({ label: `point the kept services at the workspace where they referred to ${[...topo.included, ...topo.dropped].join('/')}`, run: rewriteKept });
+  } else {
+    const pending = keptRewrites(playground, topo, plan.ports);
+    if (pending.size) {
+      const what = [...pending].map(([svc, vars]) => `${svc} (${Object.keys(vars).join(', ')})`).join('; ');
+      actions.push({ label: `point ${what} at the workspace instead of services the playground leaves out`, run: rewriteKept });
+    }
+  }
   if (workspace?.deploy?.healthcheckPath !== '/__tapthat/healthz' || !workspace || Number(workspace.deploy?.healthcheckTimeout) < 900) {
     actions.push({
       label: `${wsName}: health check /__tapthat/healthz with 15 minutes to boot (the first boot installs every repo)`,
@@ -527,10 +535,17 @@ async function installInner(opts: InstallOptions): Promise<number> {
   ok(`${url} is up`);
 
   const auth = { authorization: `Bearer ${wsVars.TAPTHAT_TOKEN}` };
-  const session = await getJson<{ session: unknown; last: unknown }>(`${url}/__tapthat/api/session`, auth);
+  const session = await getJson<{ session: { state: string } | null; last: unknown }>(`${url}/__tapthat/api/session`, auth);
+  // A first copy that failed (the last run stopped there) is cancelled and tried again.
+  const retry = !!session && session.session?.state === 'failed' && !session.last && !!pgName && !devCreated;
+  if (retry) {
+    say(dim('  the last data copy failed; cancelling it to try again'));
+    const cancelled = await fetch(`${url}/__tapthat/api/session/discard`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: '{"reviewer":"installer"}' });
+    if (!cancelled.ok) throw new Error(`Cancelling the failed session answered ${cancelled.status}: ${await cancelled.text()}`);
+  }
   if (session && !session.session && !session.last && pgName && devCreated) {
     say(dim(`  ${devName} is new and has no data yet: set its databases up, then press Start session to copy them`));
-  } else if (session && !session.session && !session.last && pgName) {
+  } else if (session && (!session.session || retry) && !session.last && pgName) {
     say(dim(`  first data copy from ${devName}`));
     const started = await fetch(`${url}/__tapthat/api/session/start`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: '{"reviewer":"installer"}' });
     if (started.status !== 202) throw new Error(`Start session answered ${started.status}: ${await started.text()}`);

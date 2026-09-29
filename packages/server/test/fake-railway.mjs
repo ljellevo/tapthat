@@ -7,6 +7,12 @@
  * FAKE_RAILWAY_ADD_EVERYWHERE=1 makes `add` create the service in every
  * environment, as a project-level service would.
  *
+ * Like Railway, `variable set` resolves a reference to another service when
+ * it is saved: one to a service the environment doesn't have yet stays empty.
+ *
+ * FAKE_RAILWAY_LITERAL_COPY=<env> makes `environment new <env>` store Postgres's
+ * password as the literal text of Railway's secret() template, as Railway can.
+ *
  * The installer calls it concurrently (it loads environments in parallel), so
  * each call holds a lock on the state file from its read to its exit; without
  * it, one call reads while another is mid-write and sees truncated JSON.
@@ -42,6 +48,8 @@ const opt = (...names) => {
   return undefined;
 };
 const has = (n) => args.includes(n);
+/** A reference to another service's variable: `${{svc.KEY}}`. */
+const REF = /\$\{\{\s*([A-Za-z0-9_-]+)\.[A-Za-z0-9_]+\s*\}\}/g;
 const stdin = () => readFileSync(0, 'utf8');
 
 state.log.push(args.join(' '));
@@ -58,7 +66,7 @@ function render(envName, svcName) {
   const vars = (name) => {
     const s = env.services[idOf(name)];
     if (!s) return {};
-    const own = Object.fromEntries(Object.entries(s.variables).map(([k, v]) => [k, v.value]));
+    const own = Object.fromEntries(Object.entries(s.variables).map(([k, v]) => [k, v.unbound ? v.value.replace(REF, (w, svc) => (v.unbound.includes(svc) ? '' : w)) : v.value]));
     own.RAILWAY_PRIVATE_DOMAIN = `${name}.railway.internal`;
     const domain = Object.keys(s.networking?.serviceDomains ?? {})[0];
     if (domain) own.RAILWAY_PUBLIC_DOMAIN = domain;
@@ -99,6 +107,11 @@ else if (a === 'environment' && b === 'new') {
   state.envs[name] = process.env.FAKE_RAILWAY_EMPTY_DUPLICATE ? { services: {} } : JSON.parse(JSON.stringify(src));
   // Domains and proxies belong to the environment they were made in.
   for (const s of Object.values(state.envs[name].services)) s.networking = { serviceDomains: {} };
+  if (process.env.FAKE_RAILWAY_LITERAL_COPY === name) {
+    for (const s of Object.values(state.envs[name].services)) {
+      if (s.variables.POSTGRES_PASSWORD) s.variables.POSTGRES_PASSWORD.value = 'secret(32, "abcdefghijklmnopqrstuvwxyz")';
+    }
+  }
 } else if (a === 'environment' && b === 'edit') {
   const env = envOf();
   for (let i = 0; i < args.length; i++) {
@@ -112,10 +125,15 @@ else if (a === 'environment' && b === 'new') {
 } else if (a === 'variable' && b === 'list') {
   out(render(opt('-e') ?? state.linked.env, opt('-s') ?? state.linked.service));
 } else if (a === 'variable' && b === 'set') {
-  const s = svcOf(envOf());
+  const env = envOf();
+  const s = svcOf(env);
+  const saved = (value) => {
+    const unbound = [...value.matchAll(REF)].map((m) => m[1]).filter((svc) => !env.services[idOf(svc)]);
+    return unbound.length ? { value, unbound } : { value };
+  };
   if (has('--stdin')) s.variables[args[2]] = { value: stdin() };
   else for (const pair of args.slice(2, args.findIndex((x, i) => i >= 2 && x.startsWith('-')))) {
-    s.variables[pair.slice(0, pair.indexOf('='))] = { value: pair.slice(pair.indexOf('=') + 1) };
+    s.variables[pair.slice(0, pair.indexOf('='))] = saved(pair.slice(pair.indexOf('=') + 1));
   }
 } else if (a === 'service' && b === 'delete') {
   const env = envOf();

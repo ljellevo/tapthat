@@ -8,7 +8,7 @@
  * change nothing.
  */
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -246,6 +246,53 @@ console.log('a second run changes nothing');
   eq('no second data copy', sidecar.starts, 1);
 }
 
+console.log('a failed first copy is tried again');
+{
+  // The last run stopped at a copy that failed; the workspace still holds that session.
+  Object.assign(sidecar, { session: { state: 'failed', error: 'psql failed' }, last: null, starts: 0, discards: 0 });
+  const r = await install(flags);
+  check('exits 0', r.code === 0, r.output);
+  eq('the failed session was cancelled, then the copy made and closed', [sidecar.starts, sidecar.discards], [1, 2]);
+  check('it says so', /last data copy failed/.test(r.output), r.output);
+}
+
+console.log('a guessable password in the new playground is replaced');
+{
+  reset();
+  const state = JSON.parse(readFileSync(railwayFile, 'utf8'));
+  state.envs.dev = JSON.parse(JSON.stringify(state.envs.production));
+  for (const s of Object.values(state.envs.dev.services)) if (s.source.repo) s.source.branch = 'dev';
+  writeFileSync(railwayFile, JSON.stringify(state));
+  const gh = JSON.parse(readFileSync(ghFile, 'utf8'));
+  for (const r of Object.values(gh.repos)) r.branches.dev = r.branches.main;
+  writeFileSync(ghFile, JSON.stringify(gh));
+  // A psql that knows one password and follows ALTER ROLE, like the playground's Postgres.
+  const literal = 'secret(32, "abcdefghijklmnopqrstuvwxyz")';
+  const pgFile = join(work, 'pg-password');
+  writeFileSync(pgFile, literal);
+  const bin = join(work, 'bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'psql'), `#!/usr/bin/env node
+const fs = require('fs');
+if (process.argv.includes('--version')) { console.log('psql (PostgreSQL) 18.0'); process.exit(0); }
+if (process.env.PGPASSWORD !== fs.readFileSync(${JSON.stringify(pgFile)}, 'utf8')) process.exit(2);
+const sql = fs.readFileSync(0, 'utf8');
+if (/ALTER ROLE/.test(sql)) fs.writeFileSync(${JSON.stringify(pgFile)}, process.env.NEW_PW);
+`);
+  chmodSync(join(bin, 'psql'), 0o755);
+
+  const r = await install(flags, { stdin: 'good-token', env: { FAKE_RAILWAY_LITERAL_COPY: 'tapthat', PATH: `${bin}:${process.env.PATH}` } });
+  check('exits 0', r.code === 0, r.output);
+  const { rw } = readState();
+  const pg = rw.envs.tapthat.services[Object.entries(rw.names).find(([, n]) => n === 'postgres')[0]];
+  const password = readFileSync(pgFile, 'utf8');
+  check('the password was changed inside Postgres', password !== literal && password.length >= 32);
+  eq('…and in the variable, to the same value', pg.variables.POSTGRES_PASSWORD.value, password);
+  eq('the temporary TCP proxy is gone again', rw.proxies['tapthat/postgres'] ?? [], []);
+  eq('then the first data copy ran', sidecar.starts, 1);
+  check('the password was not printed', !r.output.includes(password), r.output);
+}
+
 console.log('behind a gateway, every service runs in the workspace');
 {
   reset();
@@ -290,6 +337,8 @@ console.log('behind a gateway, every service runs in the workspace');
   const names = (env) => Object.keys(rw.envs[env]?.services ?? {}).map((id) => rw.names[id]).sort();
   const vars = (env, name) => Object.fromEntries(Object.entries(rw.envs[env].services[Object.entries(rw.names).find(([, n]) => n === name)[0]].variables).map(([k, v]) => [k, v.value]));
   eq('the playground is the gateway, the databases and the workspace', names('tapthat'), ['gateway', 'postgres', 'redis', 'workspace']);
+  const unbound = Object.values(rw.envs.tapthat.services).flatMap((svc) => Object.entries(svc.variables).filter(([, v]) => v.unbound).map(([k]) => k));
+  eq('every reference was saved once what it names existed', unbound, []);
   eq('the gateway points at the dev servers in the workspace',
     [vars('tapthat', 'gateway').APP_UPSTREAM, vars('tapthat', 'gateway').HOMEPAGE_UPSTREAM],
     ['${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3000', '${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3001']);
