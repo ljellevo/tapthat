@@ -49,6 +49,10 @@ The rest it works out and lists, then does after one confirmation:
 - the config;
 - the first copy of dev's data.
 
+If your sites sit behind a reverse proxy on one domain, pick the proxy as the site: it
+stays as it is, and every service behind it runs in the workspace
+([behind a gateway](https://github.com/ljellevo/tapthat/blob/main/docs/playground.md#behind-a-gateway)).
+
 Running it again only fixes what is missing. `--dry-run` shows the plan without changing
 anything. It needs the Railway CLI and the GitHub CLI (`gh`), both logged in. See the
 [playground guide](https://github.com/ljellevo/tapthat/blob/main/docs/playground.md#the-installer).

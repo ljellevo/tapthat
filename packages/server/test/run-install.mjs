@@ -212,6 +212,74 @@ console.log('workspace variables');
   eq('…and needs a TCP proxy', m.devDatabaseUrl({ PGUSER: 'postgres', PGPASSWORD: 'x' }), null);
 }
 
+console.log('behind a gateway');
+{
+  // Dealroom with resources/railway/gateway in front: homepage and app on one
+  // domain, admin on its own, app and homepage private.
+  const gateway = { id: 'svc-gateway', name: 'gateway', source: { repo: 'dealroom-no/resources', branch: 'dev', image: null }, variables: {
+    PORT: '8080',
+    APP_UPSTREAM: '${{app.RAILWAY_PRIVATE_DOMAIN}}:3000',
+    HOMEPAGE_UPSTREAM: '${{homepage.RAILWAY_PRIVATE_DOMAIN}}:3001',
+  } };
+  const onGateway = [...services.map((s) => {
+    const v = { ...s.variables };
+    if (s.name === 'api') v.WEB_ORIGIN = 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}';
+    if (s.name === 'homepage') v.NEXT_PUBLIC_APP_URL = 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}';
+    return { ...s, variables: v };
+  }), gateway];
+  // resources holds Caddyfiles and documentation, no dev script.
+  const runnable = (n) => !['gateway', 'webhooks', 'postgres', 'redis'].includes(n);
+  const edge = { publicServices: ['admin', 'gateway', 'webhooks'], runnable };
+  const facts = new Map(onGateway.filter((s) => runnable(s.name)).map((s) => [s.name, npm({ dev: 'x', typecheck: 'tsc' })]));
+
+  const t = m.topology(onGateway, 'gateway', edge);
+  eq('every repo service behind it, and the other public site, runs in the workspace',
+    [...t.included].sort(), ['admin', 'api', 'app', 'auth', 'homepage', 'payment', 'storage']);
+  eq('the gateway stays, with the databases', t.kept, ['gateway', 'postgres', 'redis']);
+  eq('what nothing reaches is dropped', t.dropped, ['webhooks']);
+  eq('admin, public on its own, is served on the workspace\'s domain', t.proxied, 'admin');
+  eq('a service that cannot run as a dev server is kept, not included',
+    m.topology(onGateway, 'gateway', { ...edge, runnable: (n) => runnable(n) && n !== 'payment' }).kept, ['gateway', 'payment', 'postgres', 'redis']);
+
+  const p = m.planWorkspace({ services: onGateway, site: 'gateway', branch: 'dev', repoFacts: facts, edge });
+  eq('the main app is the primary repo, and first', [p.primary, p.config.repos[0].name, p.config.repos[0].primary], ['app', 'app', true]);
+  eq('dependencies are pushed first', p.config.git.deployOrder, [...t.included].reverse());
+  check('…auth before api before the sites', p.config.git.deployOrder.indexOf('auth') < p.config.git.deployOrder.indexOf('api')
+    && p.config.git.deployOrder.indexOf('api') < p.config.git.deployOrder.indexOf('app'));
+  eq('the workspace\'s proxy fronts admin', p.config.proxy, { target: 'http://localhost:3400' });
+  eq('a link to the gateway stays the gateway\'s', p.variables.API_WEB_ORIGIN, 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}');
+  eq('a link to admin becomes the workspace\'s domain', p.variables.API_ADMIN_ORIGIN, 'https://${{RAILWAY_PUBLIC_DOMAIN}}');
+  eq('auth, now a dev server too, is called on localhost', p.config.repos.find((r) => r.name === 'api').devServer.env.AUTH_SERVICE_URL, 'http://localhost:3200');
+  eq('both services on Postgres stop during a copy', p.config.session.snapshot.stopServers, ['api', 'auth']);
+  eq('no warnings', p.warnings, []);
+
+  const kept = m.keptRewrites(onGateway, t, p.ports);
+  eq('the gateway is pointed at the dev servers in the workspace', kept.get('gateway'), {
+    APP_UPSTREAM: '${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3000',
+    HOMEPAGE_UPSTREAM: '${{workspace.RAILWAY_PRIVATE_DOMAIN}}:3001',
+  });
+  const base = m.baseVariables('dealroom-no/app', p.primary, t);
+  eq('pages come from the gateway and the workspace', base.TAPTHAT_ALLOWED_ORIGINS, 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}},https://${{RAILWAY_PUBLIC_DOMAIN}}');
+  eq('the primary is cloned first', base.TAPTHAT_REPO_ROOT, '/workspace/repos/app');
+  const noOther = m.topology(onGateway, 'gateway', { ...edge, publicServices: ['gateway'] });
+  eq('with nothing else public, the workspace serves only the sidecar',
+    [noOther.proxied, m.baseVariables('o/app', 'app', noOther).TAPTHAT_PROXY, m.baseVariables('o/app', 'app', noOther).TAPTHAT_ALLOWED_ORIGINS],
+    [null, '0', 'https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}']);
+  const midMove = m.planWorkspace({ services: onGateway, site: 'gateway', branch: 'dev', repoFacts: facts,
+    edge: { ...edge, publicServices: ['admin', 'app', 'gateway', 'homepage'] } });
+  check('sites still public besides the one served are named in a warning',
+    midMove.warnings.some((w) => w.startsWith('app, homepage:')), midMove.warnings.join('; '));
+
+  const dir = mkdtempSync(join(tmpdir(), 'tapthat-install-edge-'));
+  writeFileSync(join(dir, 'tapthat.config.json'), JSON.stringify(p.config, null, 2));
+  mkdirSync(join(dir, '.git'));
+  const env = Object.fromEntries(Object.keys(p.variables).map((k) => [k, 'x']));
+  Object.assign(env, { TAPTHAT_DEV_DATABASE_URL: 'postgresql://a@b/c', TAPTHAT_PLAYGROUND_DATABASE_URL: 'postgresql://a@d/c', TAPTHAT_PROXY: '1', TAPTHAT_START_DEV_SERVER: '1' });
+  const loaded = await m.loadConfig(dir, env);
+  eq('the generated config loads, the proxy on admin\'s port', loaded.problems, []);
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log('Railway quirks');
 {
   check('a literal secret() template is detected', m.isLiteralTemplate('secret(32, "abcdefghijklmnopqrstuvwxyz")'));

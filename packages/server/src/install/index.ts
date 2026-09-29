@@ -21,6 +21,7 @@ import {
   missingVariables,
   planWorkspace,
   REDIS_TEMPLATE_VARIABLES,
+  type EdgeOptions,
   SIDECAR_PORT,
   suggestSite,
   WORKSPACE,
@@ -38,7 +39,9 @@ export const INSTALL_USAGE = `tapthat-server install — set up a TapThat playgr
 
   --platform <name>     railway (the only one for now)
   --branch <name>       the dev branch Commit pushes to (asks; default dev)
-  --site <service>      the service reviewers comment on (asks; suggests one)
+  --site <service>      the service reviewers comment on (asks; suggests one).
+                        A gateway in front of your sites works too: it stays,
+                        and every service behind it runs in the workspace
   --playground <name>   the playground environment (default tapthat)
   --dry-run             show what would change, change nothing
   --yes                 accept defaults and the plan without asking
@@ -234,15 +237,33 @@ async function installInner(opts: InstallOptions): Promise<number> {
   // ── 5. the plan ──────────────────────────────────────────────────────────
   heading('Plan');
   const facts = new Map<string, RepoFacts>();
-  const planTopology = planWorkspace({ services: devServices, site, branch, repoFacts: new Map() }).topology;
-  for (const name of planTopology.included) {
-    facts.set(name, await gh.repoFacts(devServices.find((s) => s.name === name)!.source.repo!, branch));
+  const byRepo = new Map<string, RepoFacts>();
+  const factsOf = async (name: string) => {
+    const repo = devServices.find((s) => s.name === name)!.source.repo!;
+    // A dry run leaves a missing branch missing: read what it would be created from.
+    const ref = opts.dryRun && missingBranch.includes(repo) ? (defaults.get(repo) ?? branch) : branch;
+    if (!byRepo.has(repo)) byRepo.set(repo, await gh.repoFacts(repo, ref));
+    facts.set(name, byRepo.get(repo)!);
+    return byRepo.get(repo)!;
+  };
+  const runs = (f: RepoFacts) => !!(f.scripts.dev || f.scripts.start);
+  // A site that can't run as a dev server is a gateway in front of the real ones.
+  let edge: EdgeOptions | undefined;
+  if (!runs(await factsOf(site))) {
+    for (const s of devServices.filter(isRepoService)) await factsOf(s.name);
+    edge = { publicServices: [...withDomains].filter((n) => facts.has(n)).sort(), runnable: (n) => runs(facts.get(n) ?? { scripts: {}, lockfile: null }) };
+  } else {
+    const planTopology = planWorkspace({ services: devServices, site, branch, repoFacts: new Map() }).topology;
+    for (const name of planTopology.included) await factsOf(name);
   }
-  const plan = planWorkspace({ services: devServices, site, branch, repoFacts: facts });
+  const plan = planWorkspace({ services: devServices, site, branch, repoFacts: facts, edge });
   const topo = plan.topology;
   say(`  The ${bold(opts.playground)} environment runs:`);
+  if (topo.edge) say(`    ${cyan(site)}  as it runs in ${devName}, in front of the dev servers`);
   say(`    ${cyan(WORKSPACE)}  ${topo.included.map((n) => `${n} ${dim(`:${plan.ports.get(n)}`)}`).join(', ')} as live dev servers, and the agent`);
-  if (topo.kept.length) say(`    ${topo.kept.join(', ')}  ${dim('as they run in ' + devName)}`);
+  if (topo.proxied) say(`    ${dim(`${topo.proxied} on the workspace's own domain`)}`);
+  const alsoKept = topo.kept.filter((n) => n !== site || !topo.edge);
+  if (alsoKept.length) say(`    ${alsoKept.join(', ')}  ${dim('as they run in ' + devName)}`);
   if (topo.dropped.length) say(`    ${dim(`not needed: ${topo.dropped.join(', ')}`)}`);
   for (const w of plan.warnings) warn(w);
 
@@ -277,8 +298,8 @@ async function installInner(opts: InstallOptions): Promise<number> {
   }
   if (redisName) pushRedisFix(actions, rw, devName, devServices.find((s) => s.name === redisName)!, true);
 
-  // tapthat.config.json in the site's repository.
-  const siteRepo = siteSpec.source.repo;
+  // tapthat.config.json in the primary repository: the site's, or behind a gateway the main app's.
+  const siteRepo = devServices.find((s) => s.name === plan.primary)!.source.repo!;
   const existingText = await gh.file(siteRepo, 'tapthat.config.json', branch);
   let config: unknown = plan.config;
   if (existingText) {
@@ -395,7 +416,7 @@ async function installInner(opts: InstallOptions): Promise<number> {
 
   // The workspace's variables.
   const current = workspace?.variables ?? {};
-  const base = baseVariables(siteRepo, site);
+  const base = baseVariables(siteRepo, plan.primary, topo);
   const { set: missing, unknown } = missingVariables(configPlaceholders(config), base, plan.variables, current);
   for (const name of unknown) warn(`the config reads ${name}, which the installer cannot work out: set it on ${wsName} by hand`);
   const generated: Record<string, () => string> = {};
@@ -459,6 +480,15 @@ async function installInner(opts: InstallOptions): Promise<number> {
       },
     });
   }
+  // A copied environment has no public domains, and behind a gateway the gateway is the site.
+  if (topo.edge && !playground?.find((s) => s.name === site)?.domains.length) {
+    actions.push({
+      label: `${site}: a public domain, the site reviewers open`,
+      run: async () => {
+        await rw.createDomain(site, opts.playground, Number(siteSpec.variables.PORT) || SIDECAR_PORT);
+      },
+    });
+  }
 
   // ── 6. confirm and apply ─────────────────────────────────────────────────
   heading(actions.length ? 'Changes' : 'Everything is in place');
@@ -483,8 +513,7 @@ async function installInner(opts: InstallOptions): Promise<number> {
   const finalServices = await load(opts.playground);
   const ws = finalServices.find((s) => s.name === wsName);
   if (!ws) throw new Error(`${opts.playground} has no ${wsName} service after setup.`);
-  // A local domain (the installer's own tests) has no TLS.
-  const url = ws.domains[0] ? `${/^(localhost|127\.0\.0\.1)[:/]/.test(ws.domains[0]) ? 'http' : 'https'}://${ws.domains[0]}` : null;
+  const url = ws.domains[0] ? originOf(ws.domains[0]) : null;
   if (!url) throw new Error(`${wsName} has no public domain.`);
   const wsVars = await rw.rendered(wsName, opts.playground);
   const healthy = async () => (await getJson(`${url}/__tapthat/healthz`)) !== null;
@@ -534,12 +563,17 @@ async function installInner(opts: InstallOptions): Promise<number> {
   } else {
     say(`  Token        ${dim(`railway variable list -s ${wsName} -e ${opts.playground} --kv | grep TAPTHAT_TOKEN`)}`);
   }
-  say(`  Sites        ${url}`);
-  say(`\n  Then open ${url}, press ${bold('Start session')} and comment away. ${dim('Run this installer again any time; it only fixes what is missing.')}`);
+  const edgeDomain = topo.edge ? finalServices.find((s) => s.name === site)?.domains[0] : undefined;
+  const pages = topo.edge ? [...(edgeDomain ? [originOf(edgeDomain)] : []), ...(topo.proxied ? [url] : [])] : [url];
+  say(`  Sites        ${pages.join(', ') || dim(`${site}'s domain, once it has one`)}`);
+  say(`\n  Then open ${pages[0] ?? url}, press ${bold('Start session')} and comment away. ${dim('Run this installer again any time; it only fixes what is missing.')}`);
   return 0;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/** A domain's origin. A local one (the installer's own tests) has no TLS. */
+const originOf = (domain: string) => `${/^(localhost|127\.0\.0\.1)[:/]/.test(domain) ? 'http' : 'https'}://${domain}`;
 
 /** `svc.KEY` for each variable the config passes to an included repo whose dev value refers to `service`. */
 function usesOf(config: unknown, devServices: EnvService[], included: string[], service: string): string[] {
