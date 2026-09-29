@@ -219,19 +219,22 @@ builder.
 
 ### Releasing
 
-**The server** is released by pushing a tag: `git tag server-v0.2.0 && git push origin
-server-v0.2.0` publishes `tapthat-server` to npm and `ghcr.io/ljellevo/tapthat-server` to
-ghcr, as two independent jobs.
+Releases are automatic, and **the extension and the server share one version**
+(`major.minor.hotfix`). Every push to `main` that touches `packages/client`,
+`packages/shared` or `packages/server` builds and tests everything, bumps the hotfix number
+from the latest tag, and publishes:
+- the extension as a GitHub release (`release.yml`);
+- `tapthat-server` to npm and `ghcr.io/ljellevo/tapthat-server` to ghcr, with the same
+  version (`server-release.yml`, which the release starts on its tag). npm and the image are
+  two independent jobs.
+
+To republish the server for an existing tag, run *Server release* by hand with that version.
 
 npm uses [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no token is
 stored anywhere. The package's settings on npmjs.com (*Settings → Trusted publisher*) name
 `ljellevo/tapthat` and the workflow `server-release.yml`, with **Allow npm publish**
 ticked. A version already on npm is skipped rather than failing the run. The ghcr package
 is public, so Railway and Compose pull it without credentials.
-
-**The extension** releases are automatic. Every push to `main` that touches the extension builds, tests,
-packages and publishes a release, bumping the hotfix number (`major.minor.hotfix`) from the
-latest tag — no manual version bump or tag push needed.
 
 For a major or minor bump, run the *Release* workflow manually from the Actions tab (or
 `gh workflow run release.yml -f version=1.1.0`) and type the version to release.
