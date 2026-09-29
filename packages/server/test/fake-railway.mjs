@@ -7,6 +7,9 @@
  * FAKE_RAILWAY_ADD_EVERYWHERE=1 makes `add` create the service in every
  * environment, as a project-level service would.
  *
+ * FAKE_RAILWAY_LITERAL_COPY=<env> makes `environment new <env>` store Postgres's
+ * password as the literal text of Railway's secret() template, as Railway can.
+ *
  * The installer calls it concurrently (it loads environments in parallel), so
  * each call holds a lock on the state file from its read to its exit; without
  * it, one call reads while another is mid-write and sees truncated JSON.
@@ -99,6 +102,11 @@ else if (a === 'environment' && b === 'new') {
   state.envs[name] = process.env.FAKE_RAILWAY_EMPTY_DUPLICATE ? { services: {} } : JSON.parse(JSON.stringify(src));
   // Domains and proxies belong to the environment they were made in.
   for (const s of Object.values(state.envs[name].services)) s.networking = { serviceDomains: {} };
+  if (process.env.FAKE_RAILWAY_LITERAL_COPY === name) {
+    for (const s of Object.values(state.envs[name].services)) {
+      if (s.variables.POSTGRES_PASSWORD) s.variables.POSTGRES_PASSWORD.value = 'secret(32, "abcdefghijklmnopqrstuvwxyz")';
+    }
+  }
 } else if (a === 'environment' && b === 'edit') {
   const env = envOf();
   for (let i = 0; i < args.length; i++) {

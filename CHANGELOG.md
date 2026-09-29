@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The installer replaces a guessable Postgres password in the playground it creates.**
+  Railway can store its `secret()` template as text in a copied environment even when
+  dev's is fine. The first data copy then failed with "unexpected spaces found in
+  `secret(32, …)`".
+- **A re-run retries a failed first data copy.** Before, the failed session stayed, and a
+  re-run skipped the copy.
 - **One version for the extension and the server.** Each release now also publishes
   `tapthat-server` to npm and ghcr with the extension's version, so the server jumps from
   0.2.0 to the next release's number. The `server-v*` tags are retired.
