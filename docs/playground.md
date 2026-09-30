@@ -370,6 +370,27 @@ Everything in [setup.md's reference](setup.md#configuration-reference), plus:
 | `session.snapshot.exclude` | none | | Databases not copied (`postgres` and templates never are) |
 | `session.snapshot.stopServers` | none | | Dev servers stopped while their databases are replaced |
 | `session.onStart` | none | | Extra commands after the copy, for data that isn't in Postgres |
+| `session.clean` | off | | `true`, or `{"keep": ["generated"]}`: Start session clears ignored files first. See [A clean slate](#a-clean-slate) |
+
+### A clean slate
+
+With `session.clean`, Start session stops the dev servers, then deletes everything git
+ignores in every repository before copying the data. That covers `.next` and other build
+output, caches such as Turbopack's (which only grow), and files earlier sessions left
+behind. Leftover `tapthat/session-*` branches go too. A repository whose lockfile changed
+when it caught up with `dev` is reinstalled, and the dev servers start again.
+
+What stays: `node_modules`, `.env` and `.env.*`, the sidecar's state, and every name in
+`keep`, wherever it appears in a path. Put code that only `install` generates in `keep`:
+it isn't regenerated when the lockfile is unchanged. Dealroom keeps `generated`, its
+Prisma clients:
+
+```json
+"session": { "clean": { "keep": ["generated"] } }
+```
+
+It needs `devServer.start`: a dev server someone else runs can't be stopped while its
+build output is deleted.
 
 The image carries `pg_dump` 18, Railway's current Postgres template. `pg_dump` reads older
 servers fine but refuses newer ones: for a newer server, build with

@@ -6,6 +6,7 @@ import { join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { credentialKind, makeAgentRunner } from './agent';
 import { createAudit } from './audit';
+import { makeCleanStep } from './clean';
 import { CONFIG_FILENAME, loadConfig, type Config, type RepoConfig } from './config';
 import { deriveKey } from './credentials';
 import { DevServers, waitForDevServer } from './dev-server';
@@ -15,6 +16,7 @@ import { createHttpServer, ROUTE_PREFIX } from './http';
 import { runJob, type BatchRequest } from './job';
 import { addSecret } from './log';
 import { Repo } from './repo';
+import type { SessionHooks } from './session';
 import { makeSnapshotHooks } from './snapshot';
 import { Store } from './store';
 import { Workspace } from './workspace';
@@ -370,8 +372,31 @@ async function cmdServe(): Promise<number> {
   );
   servers.startAll();
 
+  const clean = config.session.clean
+    ? makeCleanStep({
+        repos: workspace.entries,
+        keep: config.session.clean.keep,
+        protect: [Store.defaultDir(config.repoRoot)],
+        stopServers: () => servers.stopAll(),
+        startServers: async () => {
+          servers.startAll();
+          await Promise.all(
+            config.repos
+              .filter((r) => servers.isRunning(r.name))
+              .map((r) => waitForDevServer(r.devServer!.url, config.devServer.readyTimeoutMs)),
+          );
+        },
+        install: async (name) => {
+          const r = config.repos.find((c) => c.name === name);
+          if (r?.devServer?.install && !(await installIfNeeded(config, r))) {
+            throw new Error(`${name}: "${r.devServer.install}" failed; see the service log.`);
+          }
+        },
+      })
+    : null;
+
   const snapshot = config.session.snapshot;
-  const sessionHooks = snapshot
+  const snapshotHooks = snapshot
     ? makeSnapshotHooks({
         snapshot,
         dir: join(Store.defaultDir(config.repoRoot), 'snapshots'),
@@ -386,6 +411,17 @@ async function cmdServe(): Promise<number> {
         },
       })
     : undefined;
+  // The clean slate first: the copy's onStart commands need the dev servers it restarts.
+  const sessionHooks: SessionHooks | undefined =
+    clean || snapshotHooks
+      ? {
+          onStart: async (progress) => {
+            await clean?.(progress);
+            await snapshotHooks?.onStart?.(progress);
+          },
+          onDiscard: snapshotHooks?.onDiscard,
+        }
+      : undefined;
 
   const server = createHttpServer({
     config,

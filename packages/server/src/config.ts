@@ -99,7 +99,16 @@ export interface Config {
    * Session mode's data half. With a snapshot, Start session copies dev's
    * databases into the playground and Discard restores that copy.
    */
-  session: { snapshot: SnapshotConfig | null; onStart: string[] };
+  session: {
+    snapshot: SnapshotConfig | null;
+    onStart: string[];
+    /**
+     * Start session removes every ignored file except these names (plus
+     * node_modules and .env files), so the playground holds only dev's code, its
+     * dependencies and its secrets. Null leaves ignored files alone.
+     */
+    clean: { keep: string[] } | null;
+  };
   /** Where the checkouts live side by side; the agent's working directory. */
   workspaceRoot: string;
   /** Primary first. Always at least one. */
@@ -122,6 +131,7 @@ interface RawFile extends Partial<Omit<Config, 'repos' | 'mirrors' | 'workspaceR
   session?: {
     snapshot?: { source?: string; target?: string; exclude?: string[]; stopServers?: string[]; redis?: string };
     onStart?: string[];
+    clean?: boolean | { keep?: string[] };
   };
   workspace?: { root?: string };
   repos?: RawRepo[];
@@ -179,7 +189,7 @@ export function defaults(cwd: string): Config {
     proxy: { enabled: false, target: null },
     devServer: { start: false, command: null, install: null, readyTimeoutMs: 120_000 },
     limits: { batchesPerHour: 60, batchesPerHourPerCredential: 20 },
-    session: { snapshot: null, onStart: [] },
+    session: { snapshot: null, onStart: [], clean: null },
     workspaceRoot: cwd,
     repos: [],
     mirrors: [],
@@ -506,7 +516,13 @@ function buildSession(config: Config, raw: RawFile['session'], env: NodeJS.Proce
           }
         : null,
     onStart: raw?.onStart ?? [],
+    clean: raw?.clean ? { keep: raw.clean === true ? [] : (raw.clean.keep ?? []) } : null,
   };
+  if (config.session.clean) {
+    if (config.git.mode !== 'session') problems.push('session.clean: only used with git.mode "session"');
+    // Removing .next under a dev server someone else runs would break it mid-request.
+    if (!config.devServer.start) problems.push('session.clean: needs devServer.start, so the dev servers can be stopped while their build output is removed');
+  }
   if (!config.session.snapshot) return;
 
   if (missing.size) {
