@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Root-owned files anywhere in the workspace are given back to `node` at boot.** The
+  entrypoint only checked the top of `/workspace/repo` and `/workspace/state`, so a
+  multi-repo workspace (`/workspace/repos`) — or a file a root shell such as `railway ssh`
+  wrote deep in `node_modules` — stayed root-owned, and `npm ci` then failed with `EACCES`
+  and the workspace would not start. The whole volume is checked now; the recursive
+  `chown` still runs only when something needs it.
 - **Start session and Discard reinstall what changed.** Either moves the checkouts to other
   commits, and a new lockfile used to wait for the next restart of the sidecar: the dev
   server ran the new code against the old `node_modules` and failed on the first import it
