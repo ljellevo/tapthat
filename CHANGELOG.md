@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Start session and Discard reinstall what changed.** Either moves the checkouts to other
+  commits, and a new lockfile used to wait for the next restart of the sidecar: the dev
+  server ran the new code against the old `node_modules` and failed on the first import it
+  added. Now a repository whose lockfile changed is reinstalled, its dev server stopped for
+  the install and started again after it; the others keep running. With or without
+  `session.clean`.
+- **Start session can clear the workspace first** (`session.clean`). Ignored files go
+  (build output, `.next` caches, files earlier sessions left behind), and so do leftover
+  session branches. Kept: `node_modules`, `.env` files, the sidecar's state and the names
+  you list in `keep`. A repository whose lockfile changed is reinstalled. Off unless
+  configured. See [A clean slate](docs/playground.md#a-clean-slate).
 - **The installer replaces a guessable Postgres password in the playground it creates.**
   Railway can store its `secret()` template as text in a copied environment even when
   dev's is fine. The first data copy then failed with "unexpected spaces found in

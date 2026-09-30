@@ -229,7 +229,13 @@ What the parts do:
   which repository holds what. `${NAME}` is filled from the service's variables, so each
   dev server gets only its own environment and no secret is committed.
 - **`prepare`** runs on every boot and after every data copy. It must be idempotent, as
-  migrations are. **`install`** is skipped when the lockfiles haven't changed.
+  migrations are. **`install`** runs on boot, and again whenever Start session or Discard
+  moves a checkout to a different lockfile; it is skipped when the lockfiles haven't
+  changed. A repo being reinstalled has its dev server stopped for the install and started
+  again after it, and the others keep running. Code that `install` generates as a side
+  effect, such as a Prisma client from `postinstall`, is not regenerated when only the
+  schema changed: run it in `prepare` too (Dealroom's is
+  `npm run postinstall && npm run migrate:deploy`).
 - **`mirrors`**: the agent edits `api/shared/contracts`, and the copy in `app` is updated
   in the same batch. Editing only the copy is refused. On Commit, the repos in
   `alsoUsedBy` are named in a notice, because they keep their own copies (Dealroom's
@@ -370,6 +376,27 @@ Everything in [setup.md's reference](setup.md#configuration-reference), plus:
 | `session.snapshot.exclude` | none | | Databases not copied (`postgres` and templates never are) |
 | `session.snapshot.stopServers` | none | | Dev servers stopped while their databases are replaced |
 | `session.onStart` | none | | Extra commands after the copy, for data that isn't in Postgres |
+| `session.clean` | off | | `true`, or `{"keep": ["generated"]}`: Start session clears ignored files first. See [A clean slate](#a-clean-slate) |
+
+### A clean slate
+
+With `session.clean`, Start session stops the dev servers, then deletes everything git
+ignores in every repository before copying the data. That covers `.next` and other build
+output, caches such as Turbopack's (which only grow), and files earlier sessions left
+behind. Leftover `tapthat/session-*` branches go too. Then the dev servers start again. A
+repository whose lockfile changed is reinstalled, as it is on every Start session.
+
+What stays: `node_modules`, `.env` and `.env.*`, the sidecar's state, and every name in
+`keep`, wherever it appears in a path. Put code that only `install` generates in `keep`:
+it isn't regenerated when the lockfile is unchanged. Dealroom keeps `generated`, its
+Prisma clients:
+
+```json
+"session": { "clean": { "keep": ["generated"] } }
+```
+
+It needs `devServer.start`: a dev server someone else runs can't be stopped while its
+build output is deleted.
 
 The image carries `pg_dump` 18, Railway's current Postgres template. `pg_dump` reads older
 servers fine but refuses newer ones: for a newer server, build with

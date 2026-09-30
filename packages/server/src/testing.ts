@@ -15,3 +15,5 @@ export { seal, unseal } from './credentials';
 export { Workspace, mirrorDirectory, revertAll } from './workspace';
 export { DevServers } from './dev-server';
 export { makeSnapshotHooks } from './snapshot';
+export { makeCleanStep, pruneIgnored } from './clean';
+export { makeInstallStep } from './install-step';

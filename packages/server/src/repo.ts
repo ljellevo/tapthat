@@ -288,6 +288,21 @@ export class Repo {
     await this.git('branch', '-D', branch);
   }
 
+  /** Local branches whose names start with `prefix`. */
+  async branchesStartingWith(prefix: string): Promise<string[]> {
+    const out = await this.git('for-each-ref', '--format=%(refname:short)', `refs/heads/${prefix}*`);
+    return out ? out.split('\n').filter((b) => b.startsWith(prefix)) : [];
+  }
+
+  /**
+   * Paths git ignores, relative to the root. A wholly ignored directory is one
+   * entry ending in `/`, so `node_modules/` is never listed file by file.
+   */
+  async ignored(): Promise<string[]> {
+    const out = await this.gitRaw('ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z');
+    return out.split('\0').filter(Boolean);
+  }
+
   static async clone(url: string, branch: string, dest: string, token: string | null): Promise<Repo> {
     await exec('git', [...gitAuthArgs(token), 'clone', '--branch', branch, url, dest], {
       maxBuffer: 16 * 1024 * 1024,
