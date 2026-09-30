@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { credentialKind, makeAgentRunner } from './agent';
 import { createAudit } from './audit';
 import { makeCleanStep } from './clean';
+import { makeInstallStep } from './install-step';
 import { CONFIG_FILENAME, loadConfig, type Config, type RepoConfig } from './config';
 import { deriveKey } from './credentials';
 import { DevServers, waitForDevServer } from './dev-server';
@@ -190,16 +191,8 @@ async function probeAgent(command: string): Promise<string | null> {
 async function installIfNeeded(config: Config, repoConfig: RepoConfig): Promise<boolean> {
   const command = repoConfig.devServer!.install!;
   const root = repoConfig.root;
-  const hash = createHash('sha256').update(command);
-  for (const file of ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'package.json']) {
-    hash.update(await readFile(join(root, file)).catch(() => Buffer.alloc(0)));
-  }
-  const digest = hash.digest('hex');
-  // One marker per repo; the single-repo name is kept so an upgrade does not reinstall.
-  const markerName = config.repos.length > 1 ? `install-${repoConfig.name}.sha256` : 'install.sha256';
-  const marker = join(Store.defaultDir(config.repoRoot), markerName);
-  const installed = existsSync(join(root, 'node_modules'));
-  if (installed && (await readFile(marker, 'utf8').catch(() => '')) === digest) {
+  const { needed, digest, marker } = await installState(config, repoConfig);
+  if (!needed) {
     console.log(`[tapthat] ${repoConfig.name}: dependencies unchanged since the last install; skipping it`);
     return true;
   }
@@ -208,6 +201,27 @@ async function installIfNeeded(config: Config, repoConfig: RepoConfig): Promise<
   await mkdir(Store.defaultDir(config.repoRoot), { recursive: true });
   await writeFile(marker, digest);
   return true;
+}
+
+/**
+ * Whether the repo's install is due: no `node_modules`, or a lockfile (or the
+ * install command) different from the one last installed successfully.
+ */
+async function installState(
+  config: Config,
+  repoConfig: RepoConfig,
+): Promise<{ needed: boolean; digest: string; marker: string }> {
+  const hash = createHash('sha256').update(repoConfig.devServer!.install!);
+  for (const file of ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'package.json']) {
+    hash.update(await readFile(join(repoConfig.root, file)).catch(() => Buffer.alloc(0)));
+  }
+  const digest = hash.digest('hex');
+  // One marker per repo; the single-repo name is kept so an upgrade does not reinstall.
+  const markerName = config.repos.length > 1 ? `install-${repoConfig.name}.sha256` : 'install.sha256';
+  const marker = join(Store.defaultDir(config.repoRoot), markerName);
+  const installed = existsSync(join(repoConfig.root, 'node_modules'));
+  const needed = !installed || (await readFile(marker, 'utf8').catch(() => '')) !== digest;
+  return { needed, digest, marker };
 }
 
 /** `prepare` (migrations and the like) runs on every boot; it must be idempotent. */
@@ -411,15 +425,44 @@ async function cmdServe(): Promise<number> {
         },
       })
     : undefined;
-  // The clean slate first: the copy's onStart commands need the dev servers it restarts.
+  // Starting a session brings each checkout up to dev, and discarding puts it
+  // back: either can change a lockfile, so a repo whose dependencies moved is
+  // reinstalled before its dev server serves the new code.
+  const withInstall = config.repos.filter((r) => r.devServer?.install);
+  const install = withInstall.length
+    ? makeInstallStep({
+        repos: withInstall.map((r) => r.name),
+        needsInstall: async (name) => (await installState(config, withInstall.find((r) => r.name === name)!)).needed,
+        install: async (name) => {
+          const r = withInstall.find((c) => c.name === name)!;
+          if (!(await installIfNeeded(config, r))) {
+            throw new Error(`${name}: "${r.devServer!.install}" failed; see the service log.`);
+          }
+        },
+        isRunning: (name) => servers.isRunning(name),
+        stopServer: (name) => servers.stop(name),
+        startServer: async (name) => {
+          servers.start(name);
+          const r = config.repos.find((c) => c.name === name);
+          if (r?.devServer?.url) await waitForDevServer(r.devServer.url, config.devServer.readyTimeoutMs);
+        },
+      })
+    : null;
+
+  // The clean slate first (it reinstalls too, so the install step then finds
+  // nothing to do); the copy's onStart commands need the dev servers running.
   const sessionHooks: SessionHooks | undefined =
-    clean || snapshotHooks
+    clean || install || snapshotHooks
       ? {
           onStart: async (progress) => {
             await clean?.(progress);
+            await install?.(progress);
             await snapshotHooks?.onStart?.(progress);
           },
-          onDiscard: snapshotHooks?.onDiscard,
+          onDiscard: async (progress) => {
+            await install?.(progress);
+            await snapshotHooks?.onDiscard?.(progress);
+          },
         }
       : undefined;
 
