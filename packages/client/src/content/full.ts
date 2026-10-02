@@ -165,8 +165,8 @@ export async function sessionAction(action: SessionAction): Promise<void> {
       session = await client.startSession(who);
       toast('Starting a session — copying the latest from dev');
     } else if (action === 'commit') {
-      const outcome = await client.commitSession(who);
-      toast(`Sent to dev: ${outcome.commits.map((c) => c.repo).join(', ')}`);
+      await client.commitSession(who);
+      toast('Session changes saved to dev');
       await retireSessionBatches();
     } else {
       await client.discardSession(who);
@@ -195,7 +195,7 @@ export async function apply(): Promise<void> {
   if (!client || submitting) return;
   const records = store.open();
   if (!records.length) {
-    toast('No open comments to apply');
+    toast('No open comments to send');
     return;
   }
 
@@ -238,7 +238,7 @@ export async function apply(): Promise<void> {
     const batch = track(accepted, records.map((r) => r.id));
     await batches.put(batch);
     watchBatch(batch);
-    toast(`Sent ${records.length} comment${records.length === 1 ? '' : 's'} to the agent`);
+    toast(`Sent ${records.length} comment${records.length === 1 ? '' : 's'} to Claude`);
   } catch (err) {
     toast(submitError(err));
   } finally {
@@ -248,7 +248,7 @@ export async function apply(): Promise<void> {
 }
 
 function submitError(err: unknown): string {
-  if (!(err instanceof SidecarError)) return `Apply failed: ${String(err)}`;
+  if (!(err instanceof SidecarError)) return `Sending failed: ${String(err)}`;
   switch (err.code) {
     case 'network':
       return "Can't reach the sidecar — Export still works";
@@ -263,7 +263,7 @@ function submitError(err: unknown): string {
     case 'origin_not_allowed':
       return err.message;
     default:
-      return `Apply failed: ${err.message}`;
+      return `Sending failed: ${err.message}`;
   }
 }
 
@@ -426,7 +426,7 @@ function viewOf(batch: TrackedBatch): BatchView {
       return {
         batchId: batch.batchId, phase,
         title: sessionMode()
-          ? `Applied in this session${commitsLabel(batch)}`
+          ? 'Applied in this session'
           : `Committed ${(batch.commits ?? []).length > 1 ? commitsLabel(batch).slice(3) : sha}${push}`,
         summary: batch.summary, files: batch.filesChanged,
         actions: [...(resolvable ? (['resolve'] as const) : []), 'undo', 'dismiss'],
@@ -470,8 +470,8 @@ function sessionView(): SessionView | null {
     if (recent && last.outcome === 'committed') {
       return {
         tone: 'done',
-        title: 'Sent to dev',
-        detail: `${last.commits.map((c) => `${c.repo} ${c.sha}`).join(' · ')}${last.by ? ` · by ${last.by}` : ''}. The dev environment deploys it from here.`,
+        title: 'Saved to dev',
+        detail: `${last.by ? `Saved by ${last.by}. ` : ''}The dev environment deploys it from here.`,
         lines: last.notices.map((n) => `⚠ ${n}`),
         actions: [start],
       };
@@ -494,7 +494,7 @@ function sessionView(): SessionView | null {
 
   const lastEvent = s.events.at(-1);
   if (SESSION_BUSY.has(s.state)) {
-    const titles: Record<string, string> = { starting: 'Starting a session…', committing: 'Sending to dev…', discarding: 'Cancelling the session…' };
+    const titles: Record<string, string> = { starting: 'Starting a session…', committing: 'Saving to dev…', discarding: 'Cancelling the session…' };
     return {
       tone: 'busy',
       title: titles[s.state]!,
@@ -513,13 +513,12 @@ function sessionView(): SessionView | null {
     };
   }
 
-  const files = s.repos.reduce((n, r) => n + r.files.length, 0);
   const n = s.pending.length;
   return {
     tone: 'active',
     title: n ? `Session · ${plural(n, 'change')} ready for dev` : 'Session · no changes yet',
     detail: [
-      n ? `${s.repos.map((r) => r.name).join(', ')} · ${plural(files, 'file')}` : 'Apply comments; they stay here until you send them.',
+      n ? null : 'Send comments to Claude; the changes stay here until you save them.',
       s.startedBy ? `started by ${s.startedBy}` : null,
     ].filter(Boolean).join(' · '),
     lines: s.pending.map((p) => `• ${(p.comments[0] ?? p.summary).split('\n')[0]}${p.reviewer ? ` — ${p.reviewer}` : ''}`),
@@ -532,8 +531,8 @@ function sessionView(): SessionView | null {
       },
       {
         action: 'commit',
-        label: sessionBusy === 'commit' ? 'Sending…' : 'Commit to dev',
-        confirm: `Send ${plural(n, 'change')} to dev?`,
+        label: sessionBusy === 'commit' ? 'Saving…' : 'Save session changes',
+        confirm: `Save ${plural(n, 'change')} to dev?`,
         primary: true,
         disabled: !!sessionBusy || n === 0,
       },
@@ -554,17 +553,13 @@ function statusLine(): { text: string | null; tone: 'info' | 'warn' | 'error' } 
     batches.list().filter((b) => b.state === 'committed').flatMap((b) => b.commentIds),
   );
   const drifted = store.open().some((c) => c.baseSha && head && c.baseSha !== head && !settled.has(c.id));
-  if (drifted) return { text: 'The page changed since you commented — re-check before applying', tone: 'warn' };
+  if (drifted) return { text: 'The page changed since you commented — re-check before sending', tone: 'warn' };
 
-  const branchLabel = (b: string | null) => (b?.startsWith('tapthat/session-') ? 'session' : (b ?? '?'));
-  let text =
-    (health.repos?.length ?? 0) > 1
-      ? health.repos.map((r) => `${r.name} ${branchLabel(r.branch)}@${r.head ?? '?'}`).join(' · ')
-      : `${branchLabel(health.repo.branch)} @ ${health.repo.head ?? '?'}`;
+  // Which repos and commits the playground is on is not the reviewer's concern; only trouble is.
   const mine = batches.list().some((b) => !isFinished(b));
-  if (health.queue.depth > 0 && !mine) text += ` · ${health.queue.depth} job${health.queue.depth === 1 ? '' : 's'} ahead`;
-  if (!health.devServer.reachable) return { text: `${text} · dev server not responding`, tone: 'warn' };
-  return { text, tone: 'info' };
+  const queued = health.queue.depth > 0 && !mine ? `${health.queue.depth} job${health.queue.depth === 1 ? '' : 's'} ahead` : null;
+  if (!health.devServer.reachable) return { text: ['Dev server not responding', queued].filter(Boolean).join(' · '), tone: 'warn' };
+  return { text: queued, tone: 'info' };
 }
 
 export function render(): void {
