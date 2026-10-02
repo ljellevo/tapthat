@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A playground sleeps when nobody uses it** (`devServer.sleepAfterMinutes`,
+  `TAPTHAT_SLEEP_AFTER_MINUTES`). After that long without use, the sidecar stops every dev
+  server and holds their ports with a page that wakes them on a click. The panel shows
+  **Asleep** with **Wake up**, and offers **Sleep** between sessions. A tab left open
+  doesn't keep it awake. The installer sets 30 minutes for the workspaces it creates.
+  Off unless configured. See [Sleep](docs/playground.md#sleep).
 - **Start session and Discard reinstall what changed.** Either moves the checkouts to other
   commits, and a new lockfile used to wait for the next restart of the sidecar: the dev
   server ran the new code against the old `node_modules` and failed on the first import it

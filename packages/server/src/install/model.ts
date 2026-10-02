@@ -458,6 +458,8 @@ export function baseVariables(primaryRepo: string, primary: string, topo?: Topol
     TAPTHAT_ENABLE: '1',
     TAPTHAT_PROXY: edge && !edge.proxied ? '0' : '1',
     TAPTHAT_START_DEV_SERVER: '1',
+    // A playground is idle most of the time, and its dev servers are most of its memory.
+    TAPTHAT_SLEEP_AFTER_MINUTES: '30',
     TAPTHAT_WORKSPACE_ROOT: '/workspace/repos',
     TAPTHAT_REPO_ROOT: `/workspace/repos/${primary}`,
     TAPTHAT_REPO_URL: `https://github.com/${primaryRepo}.git`,

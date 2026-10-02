@@ -33,7 +33,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node test/run-safety.mjs && node test/run-http.mjs && node test/run-lifecycle.mjs && node test/run-workspace.mjs && node test/run-session.mjs && node test/run-snapshot.mjs && node test/run-clean.mjs && node test/run-install-step.mjs && node test/run-install.mjs && node test/run-installer.mjs",
+    "test": "node test/run-safety.mjs && node test/run-http.mjs && node test/run-lifecycle.mjs && node test/run-workspace.mjs && node test/run-session.mjs && node test/run-snapshot.mjs && node test/run-clean.mjs && node test/run-sleep.mjs && node test/run-install-step.mjs && node test/run-install.mjs && node test/run-installer.mjs",
     "check": "npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {

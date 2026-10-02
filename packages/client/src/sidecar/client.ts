@@ -198,6 +198,8 @@ export function createClient(opts: ClientOptions) {
     startSession: (reviewer: string | null) => call<SessionResponse>('POST', '/api/session/start', { reviewer: reviewer ?? undefined }),
     commitSession: (reviewer: string | null) => call<SessionOutcome>('POST', '/api/session/commit', { reviewer: reviewer ?? undefined }),
     discardSession: (reviewer: string | null) => call<SessionOutcome>('POST', '/api/session/discard', { reviewer: reviewer ?? undefined }),
+    wake: () => call<{ asleep: boolean }>('POST', '/wake'),
+    sleep: () => call<{ asleep: boolean }>('POST', '/api/sleep'),
     watch,
   };
 }

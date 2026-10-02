@@ -25,6 +25,7 @@ import type { Store, StoredBatch } from './store';
 import { makeVerifier } from './verify';
 import { revertAll, Workspace } from './workspace';
 import { SessionError, Sessions, type SessionHooks } from './session';
+import type { Sleeper } from './sleep';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 /** Keeps idle SSE connections alive through PaaS edges that drop quiet sockets. */
@@ -63,6 +64,8 @@ export interface ServerDeps {
   workspace?: Workspace;
   /** Session mode: the data half of Start session and Discard. */
   sessionHooks?: SessionHooks;
+  /** Stops the dev servers when nobody uses them (`devServer.sleepAfterMinutes`). */
+  sleep?: Sleeper;
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -114,6 +117,9 @@ export function createHttpServer(deps: ServerDeps): Server {
   const queue = new Queue();
   const sessions = new Sessions({ config, workspace: ws, store, queue, audit, hooks: deps.sessionHooks });
   void sessions.reconcile();
+  const sleep = deps.sleep ?? null;
+  // A batch or a session step in flight is use, however long it takes.
+  sleep?.busyWhen(() => queue.depth(config.branch) > 0);
   const proxy = config.proxy.enabled ? createProxy(config.proxy.target ?? config.devServerUrl) : null;
   /** Open SSE responses per batch. */
   const streams = new Map<string, Set<ServerResponse>>();
@@ -265,6 +271,7 @@ export function createHttpServer(deps: ServerDeps): Server {
           const pending = current.batchIds.filter((id) => store.getBatch(id)?.state === 'committed').length;
           return { id: current.id, state: current.state, pending };
         })(),
+        sleep: sleep ? { asleep: sleep.isAsleep, afterMinutes: sleep.afterMinutes } : null,
       } satisfies Health);
       return;
     }
@@ -279,6 +286,14 @@ export function createHttpServer(deps: ServerDeps): Server {
       return;
     }
 
+    // Public, like the page that calls it: waking only starts what was already
+    // running, and the page is all a reviewer has before the dev servers answer.
+    if (path === '/wake' && req.method === 'POST') {
+      await sleep?.wake();
+      json(res, 202, { asleep: false });
+      return;
+    }
+
     // Everything past here is a repo-write primitive or touches credentials.
     if (!authorized(req)) {
       audit('auth.rejected', { path, origin: req.headers.origin ?? null });
@@ -290,6 +305,22 @@ export function createHttpServer(deps: ServerDeps): Server {
     if (req.headers.origin && !originAllowed(req.headers.origin) && !extensionOrigin(req.headers.origin)) {
       audit('origin.rejected', { path, origin: req.headers.origin });
       json(res, 403, { error: 'origin_not_allowed', message: `Origin ${req.headers.origin} is not in allowedOrigins.` });
+      return;
+    }
+
+    // The panel polls status while it is open; that alone is not use.
+    const polling = req.method === 'GET' && path === '/api/session';
+    if (!polling) sleep?.touch();
+    // A batch, an undo or a session step is followed by looking at the result.
+    if (req.method === 'POST' && /^\/api\/(batches(\/[^/]+\/revert)?|session\/\w+)$/.test(path)) await sleep?.wake();
+
+    if (path === '/api/sleep' && req.method === 'POST') {
+      if (queue.depth(config.branch) > 0) {
+        json(res, 409, { error: 'busy', message: 'A batch or a session step is running; it sleeps once that is done and nobody uses it.' });
+        return;
+      }
+      await sleep?.sleep();
+      json(res, 200, { asleep: !!sleep });
       return;
     }
 
@@ -651,6 +682,11 @@ export function createHttpServer(deps: ServerDeps): Server {
     const path = sidecarPath(url.pathname, !!proxy);
 
     if (path === null) {
+      if (sleep?.isAsleep) {
+        sleep.answer(req, res);
+        return;
+      }
+      sleep?.touch();
       proxy!.web(req, res);
       return;
     }
@@ -670,6 +706,12 @@ export function createHttpServer(deps: ServerDeps): Server {
     });
   });
 
-  if (proxy) server.on('upgrade', proxy.upgrade);
+  if (proxy) {
+    server.on('upgrade', (req, socket, head) => {
+      if (sleep?.isAsleep) return sleep.refuse(req, socket);
+      sleep?.touch();
+      proxy.upgrade(req, socket, head);
+    });
+  }
   return server;
 }

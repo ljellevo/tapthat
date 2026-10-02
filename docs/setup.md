@@ -187,6 +187,7 @@ Variables:
 | `TAPTHAT_BRANCH` | `dev` | The branch the agent commits to. |
 | `TAPTHAT_PROXY` | `1` | One public port for the site and the sidecar. |
 | `TAPTHAT_START_DEV_SERVER` | `1` | The sidecar runs the dev server. |
+| `TAPTHAT_SLEEP_AFTER_MINUTES` | `30` | Optional. Stops the dev server after this long without use. See [Sleep](playground.md#sleep). |
 | `TAPTHAT_INSTALL_COMMAND` | `npm ci --no-audit --no-fund` | Run before the dev server, when dependencies changed. |
 | `TAPTHAT_DEV_COMMAND` | `npm run dev` | How to start the dev server. |
 | `TAPTHAT_DEV_SERVER` | `http://localhost:3000` | Where it listens inside the container. It gets this port as `PORT`, never Railway's. |
@@ -337,6 +338,7 @@ cloned repository), then defaults. Every problem is reported at once on boot.
 | `devServer.start` | `false` | `TAPTHAT_START_DEV_SERVER=1` | Restarted automatically if it dies |
 | `devServer.command` | `null` | `TAPTHAT_DEV_COMMAND` | |
 | `devServer.install` | `null` | `TAPTHAT_INSTALL_COMMAND` | Skipped when lockfiles are unchanged |
+| `devServer.sleepAfterMinutes` | `0` (never) | `TAPTHAT_SLEEP_AFTER_MINUTES` | Stops the dev servers after this long without use. See [Sleep](playground.md#sleep) |
 | `limits.batchesPerHour` | `60` | | Across everyone |
 | `limits.batchesPerHourPerCredential` | `20` | | Per reviewer credential |
 | `killSwitch` | `false` | `TAPTHAT_KILL_SWITCH=1` | Refuses new batches; everything else keeps working |
