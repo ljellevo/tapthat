@@ -147,7 +147,7 @@ async function boot(url, respond = () => HEALTH) {
   await new Promise((r) => setTimeout(r, 50));
   check('Light: the panel mounts with Export', !!button('Export'));
   check('Light: Export is the primary button', button('Export')?.classList.contains('primary'));
-  check('Light: Apply to dev is hidden', button('Apply to dev')?.hidden === true);
+  check('Light: Send to Claude is hidden', button('Send to Claude')?.hidden === true);
   const help = root()?.querySelector('.panel-help');
   check('Light: the help button is in the panel header', !!help && help.textContent === '?');
   help?.click();
@@ -189,16 +189,18 @@ async function boot(url, respond = () => HEALTH) {
     'av:settings': { sidecarUrl: 'http://localhost:7420', token: 't', credential: null, allowedOrigins: ['http://localhost:3000'] },
   });
   await new Promise((r) => setTimeout(r, 100));
-  check('Full: Apply to dev appears live', button('Apply to dev')?.hidden === false);
-  check('Full: Apply becomes primary', button('Apply to dev')?.classList.contains('primary'));
+  check('Full: Send to Claude appears live', button('Send to Claude')?.hidden === false);
+  check('Full: Apply becomes primary', button('Send to Claude')?.classList.contains('primary'));
   check('Full: Export is hidden while the sidecar is healthy', button('Export')?.hidden === true);
   check('Full: the sidecar is asked for health', requests.some((r) => r.endsWith('/healthz')), requests.join(', '));
   const status = root()?.querySelector('.panel-status');
-  check('Full: the branch line names branch and head before Apply', status?.textContent === 'dev @ abc1234', status?.textContent);
+  check('Full: no repo or commit line while all is well', status?.hidden === true, status?.textContent);
+  check('Full: Send to Claude sits right under the comments',
+    button('Send to Claude')?.parentElement === root()?.querySelector('.panel-list')?.nextElementSibling);
 
   await window.chrome.storage.local.set({ 'av:settings': { ...DEFAULTS } });
   await new Promise((r) => setTimeout(r, 50));
-  check('clearing settings goes back to Light live', button('Apply to dev')?.hidden === true
+  check('clearing settings goes back to Light live', button('Send to Claude')?.hidden === true
     && button('Export')?.classList.contains('primary') && button('Export')?.hidden === false);
   window.close();
 }
@@ -225,7 +227,7 @@ async function boot(url, respond = () => HEALTH) {
   });
   window.chrome._send({ type: 'TOGGLE' });
   await new Promise((r) => setTimeout(r, 100));
-  check('off-allowlist: Apply stays hidden', button('Apply to dev')?.hidden === true);
+  check('off-allowlist: Apply stays hidden', button('Send to Claude')?.hidden === true);
   check('off-allowlist: still zero network requests', requests.length === 0, requests.join(', '));
   window.close();
 }
@@ -261,7 +263,9 @@ async function boot(url, respond = () => HEALTH) {
   await settle();
   const strip = () => root()?.querySelector('.session');
   check('playground: with no session, the strip offers Start session', !!button('Start session') && strip()?.hidden === false);
-  check('playground: Apply waits for a session', button('Apply to dev')?.hidden === true);
+  check('playground: Apply waits for a session', button('Send to Claude')?.hidden === true);
+  const foot = () => root()?.querySelector('.panel-foot');
+  check('playground: Start session is in the footer', button('Start session')?.parentElement === foot());
 
   button('Start session').click();
   await settle();
@@ -269,20 +273,22 @@ async function boot(url, respond = () => HEALTH) {
     sidecar.calls.some((c) => c.startsWith('POST /api/session/start') && c.includes('"reviewer":"Ana"')), sidecar.calls.join(' | '));
   check('an active session lists its pending changes',
     strip()?.textContent.includes('1 change ready for dev') && strip()?.textContent.includes('Show the deal stage — Ana'), strip()?.textContent);
-  check('it names the repos and counts the files', strip()?.textContent.includes('app, api · 3 files'), strip()?.textContent);
-  check('Apply is available during a session', button('Apply to dev')?.hidden === false);
+  check('it does not list repos or files', !strip()?.textContent.includes('app, api') && !strip()?.textContent.includes('3 files'), strip()?.textContent);
+  check('Apply is available during a session', button('Send to Claude')?.hidden === false);
 
-  check('Commit to dev is styled apart from Apply', button('Commit to dev')?.classList.contains('commit')
-    && !button('Apply to dev')?.classList.contains('commit'));
-  button('Commit to dev').click();
+  check('Cancel session and Save session changes are in the footer',
+    button('Cancel session')?.parentElement === foot() && button('Save session changes')?.parentElement === foot());
+  check('Save session changes is styled apart from Send to Claude', button('Save session changes')?.classList.contains('commit')
+    && !button('Send to Claude')?.classList.contains('commit'));
+  button('Save session changes').click();
   await settle();
-  check('Commit to dev asks for a second click first',
-    !!button('Send 1 change to dev?') && !sidecar.calls.some((c) => c.includes('/api/session/commit')));
-  button('Send 1 change to dev?').click();
+  check('Save session changes asks for a second click first',
+    !!button('Save 1 change to dev?') && !sidecar.calls.some((c) => c.includes('/api/session/commit')));
+  button('Save 1 change to dev?').click();
   await settle();
   check('the second click sends it', sidecar.calls.some((c) => c.startsWith('POST /api/session/commit')));
-  check('after Commit the strip says what reached dev, per repo',
-    strip()?.textContent.includes('Sent to dev') && strip()?.textContent.includes('api a1b2c3d · app d4e5f6a'), strip()?.textContent);
+  check('after saving the strip says it reached dev, without repos or commits',
+    strip()?.textContent.includes('Saved to dev') && !strip()?.textContent.includes('a1b2c3d'), strip()?.textContent);
   check('…and relays notices for a human', strip()?.textContent.includes('sync it there too'));
   check('…and offers the next Start session', !!button('Start session'));
   window.close();
@@ -315,7 +321,7 @@ async function boot(url, respond = () => HEALTH) {
   check('asleep, the strip says so and offers only Wake up',
     strip()?.textContent.includes('Asleep') && strip()?.textContent.includes('30 minutes') && !!button('Wake up') && !button('Start session'),
     strip()?.textContent);
-  check('asleep, Apply is hidden', button('Apply to dev')?.hidden === true);
+  check('asleep, Send to Claude is hidden', button('Send to Claude')?.hidden === true);
 
   button('Wake up').click();
   await settle();

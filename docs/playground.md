@@ -403,7 +403,7 @@ that says the playground is asleep, with a **Wake it up** button. Loading that p
 wake anything: a forgotten tab that reloads itself mustn't undo the sleep. Once woken, by
 anyone, the page reloads itself when the dev servers answer. The panel shows **Asleep** with
 **Wake up**, and between sessions it offers **Sleep** to stop the dev servers right away.
-Apply, Start session, Commit and Cancel wake it first.
+Send to Claude, Start session, Save session changes and Cancel session wake it first.
 
 Waking starts the dev servers the way a boot does, without the install. The first page
 then compiles from cold, which takes a minute or two for a Next.js app. The session, the
