@@ -107,14 +107,14 @@
           <p class="muted">Works on any website. Needs no setup at all.</p>
         </div>
         <div class="card">
-          <h3>Apply them</h3>
-          <p>Press <strong>Apply to dev</strong> and an AI assistant makes the change on your team's
+          <h3>Send them to Claude</h3>
+          <p>Press <strong>Send to Claude</strong> and an AI assistant makes the change on your team's
             test version of the site. You see it update in front of you, usually within a minute.</p>
           <p class="muted">Only on your team's test site, and needs a little setup.</p>
         </div>
       </div>
       <p>If you only want to copy comments, you're done: the extension already works. The rest of
-        this page is about <strong>Apply to dev</strong>.</p>
+        this page is about <strong>Send to Claude</strong>.</p>
     </section>
 
     <section id="need">
@@ -136,7 +136,7 @@
           <a href="#key">How to get one ↓</a></li>
       </ul>
       <div class="note">Not sure whether you need your own key? Skip it. TapThat will ask for it the
-        first time you press <strong>Apply to dev</strong>, and only if it's actually needed.</div>
+        first time you press <strong>Send to Claude</strong>, and only if it's actually needed.</div>
     </section>
 
     <section id="key">
@@ -167,7 +167,7 @@
           right-click the TapThat icon in your browser's toolbar and choose <strong>Options</strong>. If you
           don't see the icon, click the puzzle-piece icon first.</li>
         <li><strong>Paste the Sidecar URL and the access token</strong> from your developer into the
-          first two boxes. Leave "Sites that get Apply to dev" empty: it fills itself in.</li>
+          first two boxes. Leave "Sites that get Send to Claude" empty: it fills itself in.</li>
         <li><strong>Click "Save &amp; test".</strong> You should see a green ✓ and the word
           <em>Connected</em>. If you see a red ✗ instead, check that you copied both values exactly,
           or see <a href="#trouble">Something's wrong</a>.</li>
@@ -188,7 +188,7 @@
         <li><strong>Click</strong> it and write what should change, as you'd say it to a colleague:
           <em>"Make this button green"</em>, <em>"This heading should say Welcome back"</em>. Save with
           <kbd>⌘</kbd> + <kbd>Enter</kbd> (Mac) or <kbd>Ctrl</kbd> + <kbd>Enter</kbd>.</li>
-        <li>Add as many comments as you like, then press <strong>Apply to dev</strong>.</li>
+        <li>Add as many comments as you like, then press <strong>Send to Claude</strong>.</li>
         <li><strong>Watch the page.</strong> It updates by itself, and each comment shows how far along it is:</li>
       </ol>
       <table>
@@ -219,16 +219,16 @@
         <li><strong>Start session.</strong> This copies the latest version of the test site into the playground,
           its data included, so you start from what everyone else sees. It takes a few minutes; the panel shows
           how far along it is.</li>
-        <li><strong>Comment and apply</strong> as usual. Every change appears in the playground only. Teammates
+        <li><strong>Comment and send to Claude</strong> as usual. Every change appears in the playground only. Teammates
           in the same playground see your changes, and you see theirs.</li>
-        <li>When you're happy, press <strong>Commit to dev</strong> (twice, to confirm). Everything from the
+        <li>When you're happy, press <strong>Save session changes</strong> (twice, to confirm). Everything from the
           session is sent to the team's test site, and it updates there a few minutes later.</li>
         <li>Not happy? <strong>Cancel session</strong> (twice, to confirm) throws the session away, including
           your comments and any data you changed while testing, and the playground goes back to how the test
           site looks.</li>
       </ol>
-      <div class="note">Nothing reaches the test site until someone presses <strong>Commit to dev</strong>, and
-        nothing reaches the real website until your developers publish it. If Commit says someone else changed the
+      <div class="note">Nothing reaches the test site until someone presses <strong>Save session changes</strong>, and
+        nothing reaches the real website until your developers publish it. If saving says someone else changed the
         same thing in the meantime, nothing was sent. Ask a developer to combine the two.</div>
     </section>
 
@@ -244,7 +244,7 @@
           <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>
           at any time.</dd>
         <dt>What does it cost?</dt>
-        <dd>Each time you press <strong>Apply to dev</strong>, Claude's work is billed to the account
+        <dd>Each time you press <strong>Send to Claude</strong>, Claude's work is billed to the account
           whose key was used. A few small changes are usually inexpensive. You can see your usage and set
           a spending limit on console.anthropic.com. TapThat also caps how many times per hour a key
           can be used, in case something goes wrong.</dd>
@@ -257,7 +257,7 @@
     <section id="trouble">
       <h2>Something's wrong</h2>
       <dl>
-        <dt>I don't see an "Apply to dev" button</dt>
+        <dt>I don't see a "Send to Claude" button</dt>
         <dd>You're either not on the test site, or TapThat isn't connected yet. Check the address you're on,
           then open TapThat's settings and click <strong>Test connection</strong>.</dd>
         <dt>"Can't reach the sidecar"</dt>
@@ -273,7 +273,7 @@
         <dd>Changes are made one at a time, so someone else is probably ahead of you. The panel shows how many.</dd>
         <dt>"The page changed since you commented"</dt>
         <dd>Someone else's change landed after you wrote your comments. Look at the page again before pressing
-          Apply, in case what you wanted is already different.</dd>
+          Send to Claude, in case what you wanted is already different.</dd>
         <dt>Anything else</dt>
         <dd>Every error message in the panel has a <strong>Copy</strong> button. Paste it to your developer:
           it tells them exactly what happened.</dd>

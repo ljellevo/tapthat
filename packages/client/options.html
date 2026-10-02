@@ -59,7 +59,7 @@
     <h1>TapThat <span class="mode" id="mode">Light</span> <a class="help" href="help.html" target="_blank">Help &amp; setup guide</a></h1>
     <p class="lede">
       Without a sidecar, TapThat is <strong>Light</strong>: comment, Export, paste into your agent. Connect a sidecar
-      and pages on your dev sites get an <strong>Apply to dev</strong> button that sends comments straight to an
+      and pages on your dev sites get a <strong>Send to Claude</strong> button that sends comments straight to an
       agent running beside the dev server.
     </p>
 
@@ -70,7 +70,7 @@
       <input id="url" type="url" placeholder="http://localhost:7420 or https://your-dev-app.up.railway.app/__tapthat" spellcheck="false" />
       <label for="token">Access token</label>
       <input id="token" type="password" placeholder="TAPTHAT_TOKEN" autocomplete="off" spellcheck="false" />
-      <label for="origins">Sites that get Apply to dev</label>
+      <label for="origins">Sites that get Send to Claude</label>
       <textarea id="origins" placeholder="https://your-dev-app.up.railway.app&#10;http://localhost:5173" spellcheck="false"></textarea>
       <p class="hint" style="margin-top:6px">One per line. Leave empty to use the sidecar's own list. Every other site stays Light.</p>
       <label for="reviewer">Your name <span style="font-weight:400;color:var(--muted)">(optional)</span></label>

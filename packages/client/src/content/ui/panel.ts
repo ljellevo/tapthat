@@ -5,6 +5,7 @@ import { el, getHost } from './host';
 import { makeDraggable, clampToViewport } from './drag';
 
 const POS_KEY = 'av:panel-pos';
+const APPLY_LABEL = 'Send to Claude';
 
 export interface PanelOptions {
   onSelect(record: CommentRecord): void;
@@ -77,6 +78,8 @@ let applyBtn: HTMLButtonElement | null = null;
 let statusEl: HTMLDivElement | null = null;
 let batchEl: HTMLDivElement | null = null;
 let sessionEl: HTMLDivElement | null = null;
+/** The footer holds the session's own actions: Start, Cancel, Save session changes. */
+let footEl: HTMLDivElement | null = null;
 /** Session mode without an active session: Apply waits for Start session. */
 let applyAllowed = true;
 let fullMode = false;
@@ -139,18 +142,8 @@ export async function mount(opts: PanelOptions) {
   listEl = el('div', 'panel-list');
   node.appendChild(listEl);
 
-  // Full mode chrome, hidden in Light: the last batch, then the branch line.
-  batchEl = el('div', 'batch');
-  batchEl.hidden = true;
-  node.appendChild(batchEl);
-  sessionEl = el('div', 'session');
-  sessionEl.hidden = true;
-  node.appendChild(sessionEl);
-  statusEl = el('div', 'panel-status');
-  statusEl.hidden = true;
-  node.appendChild(statusEl);
-
-  const foot = el('div', 'panel-foot');
+  // What acts on the comments sits right under them; the session's actions go in the footer.
+  const actions = el('div', 'panel-actions');
 
   clearBtn = el('button', 'ghost', 'Clear all');
   clearBtn.addEventListener('click', () => {
@@ -164,25 +157,39 @@ export async function mount(opts: PanelOptions) {
     disarmClear();
     opts.onClear();
   });
-  foot.appendChild(clearBtn);
+  actions.appendChild(clearBtn);
 
   resolvedBtn = el('button', 'ghost', 'Resolved');
   resolvedBtn.addEventListener('click', () => {
     view = view === 'open' ? 'resolved' : 'open';
     render(lastRecords);
   });
-  foot.appendChild(resolvedBtn);
+  actions.appendChild(resolvedBtn);
 
-  foot.appendChild(el('span', 'spacer'));
-  applyBtn = el('button', 'primary', 'Apply to dev');
-  applyBtn.title = 'Send the open comments to the agent on your dev environment';
+  actions.appendChild(el('span', 'spacer'));
+  applyBtn = el('button', 'primary', APPLY_LABEL);
+  applyBtn.title = 'Send the open comments to Claude, which makes the change on your dev environment';
   applyBtn.hidden = true;
   applyBtn.addEventListener('click', () => opts.onApply?.());
-  foot.appendChild(applyBtn);
+  actions.appendChild(applyBtn);
   exportBtn = el('button', 'primary', 'Export');
   exportBtn.addEventListener('click', () => opts.onExport());
-  foot.appendChild(exportBtn);
-  node.appendChild(foot);
+  actions.appendChild(exportBtn);
+  node.appendChild(actions);
+
+  // Full mode chrome, hidden in Light: the last batch, the session, the status line.
+  batchEl = el('div', 'batch');
+  batchEl.hidden = true;
+  node.appendChild(batchEl);
+  sessionEl = el('div', 'session');
+  sessionEl.hidden = true;
+  node.appendChild(sessionEl);
+  statusEl = el('div', 'panel-status');
+  statusEl.hidden = true;
+  node.appendChild(statusEl);
+  footEl = el('div', 'panel-foot');
+  footEl.hidden = true;
+  node.appendChild(footEl);
 
   layer.appendChild(node);
 
@@ -225,7 +232,7 @@ export function render(records: CommentRecord[]) {
   if (exportBtn) exportBtn.disabled = open.length === 0;
   if (applyBtn) {
     applyBtn.disabled = open.length === 0 || applyBusy;
-    applyBtn.textContent = applyBusy ? 'Applying…' : 'Apply to dev';
+    applyBtn.textContent = applyBusy ? 'Sending…' : APPLY_LABEL;
   }
   if (clearBtn) clearBtn.disabled = records.length === 0;
   if (resolvedBtn) {
@@ -309,10 +316,11 @@ export function setMode(mode: Mode) {
     if (statusEl) statusEl.hidden = true;
     if (batchEl) batchEl.hidden = true;
     if (sessionEl) sessionEl.hidden = true;
+    if (footEl) footEl.hidden = true;
   }
 }
 
-/** Hides Apply while a playground has no active session; Start session sits in the strip. */
+/** Hides Apply while a playground has no active session; Start session sits in the footer. */
 export function setApplyAllowed(allowed: boolean) {
   applyAllowed = allowed;
   syncFootButtons();
@@ -335,9 +343,11 @@ function syncFootButtons() {
 let armed: { action: SessionAction; timer: number } | null = null;
 
 export function setSession(view: SessionView | null) {
-  if (!sessionEl) return;
+  if (!sessionEl || !footEl) return;
   sessionEl.textContent = '';
   sessionEl.hidden = !view;
+  footEl.textContent = '';
+  footEl.hidden = !view?.actions.length;
   if (!view) return;
   sessionEl.className = `session session-${view.tone}`;
 
@@ -355,16 +365,15 @@ export function setSession(view: SessionView | null) {
   }
   if (view.lines?.length) sessionEl.appendChild(el('div', 'session-lines', view.lines.join('\n')));
 
-  const buttons = view.actions;
-  if (!buttons.length) return;
-  const row = el('div', 'row session-actions');
-  for (const spec of buttons) {
+  // Cancel on the left, the forward action on the right.
+  for (const spec of view.actions) {
+    if (spec.primary) footEl.appendChild(el('span', 'spacer'));
     const isArmed = armed?.action === spec.action;
     const btn = el(
       'button',
       [
         spec.primary ? 'primary' : 'ghost',
-        // Commit ships to the shared dev environment; it must not read as another Apply.
+        // Saving ships to the shared dev environment; it must not read as another Send to Claude.
         spec.action === 'commit' ? 'commit' : '',
         isArmed ? (spec.primary ? 'armed' : 'danger-armed') : '',
       ].filter(Boolean).join(' '),
@@ -372,7 +381,7 @@ export function setSession(view: SessionView | null) {
     );
     btn.disabled = !!spec.disabled;
     btn.addEventListener('click', () => {
-      // Commit and Cancel session are not undoable from here, so they take two clicks,
+      // Saving and cancelling are not undoable from here, so they take two clicks,
       // the same way Clear all does.
       if (spec.confirm && armed?.action !== spec.action) {
         if (armed) clearTimeout(armed.timer);
@@ -384,9 +393,8 @@ export function setSession(view: SessionView | null) {
       armed = null;
       options?.onSessionAction?.(spec.action);
     });
-    row.appendChild(btn);
+    footEl.appendChild(btn);
   }
-  sessionEl.appendChild(row);
 }
 
 export function setStatuses(next: Map<string, Phase>) {
@@ -399,7 +407,7 @@ export function setApplyBusy(busy: boolean) {
   render(lastRecords);
 }
 
-/** The branch/drift line: which branch Apply will touch, before it is clicked. */
+/** The status line: drift, an unreachable sidecar, a queue. Empty when all is well. */
 export function setStatusLine(text: string | null, tone: 'info' | 'warn' | 'error' = 'info') {
   if (!statusEl) return;
   statusEl.hidden = !text;
@@ -487,6 +495,7 @@ export function destroy() {
   statusEl = null;
   batchEl = null;
   sessionEl = null;
+  footEl = null;
   clearBtn = null;
   options = null;
 }

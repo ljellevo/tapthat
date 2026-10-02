@@ -312,6 +312,8 @@ button:disabled:hover { background: transparent; }
 /* A disabled filled button keeps its fill on hover, or its white label vanishes. */
 button.primary:disabled:hover { background: var(--av-blue); }
 
+/* Under the comments: what acts on them. The footer: the session's own actions. */
+.panel-actions,
 .panel-foot {
   display: flex;
   align-items: center;
@@ -319,6 +321,7 @@ button.primary:disabled:hover { background: var(--av-blue); }
   padding: 8px 10px;
   border-top: 1px solid var(--av-border);
 }
+.panel-foot[hidden] { display: none; }
 
 /* ---------- full mode ---------- */
 
@@ -435,10 +438,9 @@ button.primary:disabled:hover { background: var(--av-blue); }
   background: var(--av-blue);
   animation: av-pulse 1.1s ease-in-out infinite;
 }
-.session-actions { justify-content: flex-end; }
 button.armed { background: var(--av-blue-dark); }
 
-/* Commit to dev ships to the shared environment: green, bolder, never mistaken for Apply. */
+/* Save session changes ships to the shared environment: green, bolder, never mistaken for Send to Claude. */
 button.commit,
 button.commit:disabled,
 button.commit:disabled:hover { background: var(--av-commit); color: #fff; }
