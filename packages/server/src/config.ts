@@ -92,8 +92,12 @@ export interface Config {
    * Compose and npx the dev server already has its own.
    */
   proxy: { enabled: boolean; target: string | null };
-  /** Let the sidecar own the dev server's lifecycle (standalone/PaaS shape). */
-  devServer: { start: boolean; command: string | null; install: string | null; readyTimeoutMs: number };
+  /**
+   * Let the sidecar own the dev server's lifecycle (standalone/PaaS shape).
+   * `sleepAfterMinutes` stops every dev server after that long without use, and
+   * starts them again on request; 0 keeps them running.
+   */
+  devServer: { start: boolean; command: string | null; install: string | null; readyTimeoutMs: number; sleepAfterMinutes: number };
   limits: { batchesPerHour: number; batchesPerHourPerCredential: number };
   /**
    * Session mode's data half. With a snapshot, Start session copies dev's
@@ -187,7 +191,7 @@ export function defaults(cwd: string): Config {
     killSwitch: false,
     auth: { mode: 'token' },
     proxy: { enabled: false, target: null },
-    devServer: { start: false, command: null, install: null, readyTimeoutMs: 120_000 },
+    devServer: { start: false, command: null, install: null, readyTimeoutMs: 120_000, sleepAfterMinutes: 0 },
     limits: { batchesPerHour: 60, batchesPerHourPerCredential: 20 },
     session: { snapshot: null, onStart: [], clean: null },
     workspaceRoot: cwd,
@@ -277,6 +281,9 @@ export async function loadConfig(
   if (env.TAPTHAT_PROXY === '1') config.proxy.enabled = true;
   if (env.TAPTHAT_START_DEV_SERVER === '1') config.devServer.start = true;
   if (env.TAPTHAT_DEV_COMMAND) config.devServer.command = env.TAPTHAT_DEV_COMMAND;
+  config.devServer.sleepAfterMinutes = num(
+    env.TAPTHAT_SLEEP_AFTER_MINUTES, config.devServer.sleepAfterMinutes, problems, 'TAPTHAT_SLEEP_AFTER_MINUTES',
+  );
   if (env.TAPTHAT_AUTH_MODE === 'none') config.auth.mode = 'none';
 
   config.repoRoot = isAbsolute(config.repoRoot) ? config.repoRoot : resolve(cwd, config.repoRoot);
@@ -332,6 +339,9 @@ export async function loadConfig(
         problems.push(`${label}: "${target.url}" is not a valid URL (override with TAPTHAT_DEV_SERVER)`);
       }
     }
+  }
+  if (config.devServer.sleepAfterMinutes < 0) {
+    problems.push(`devServer.sleepAfterMinutes: ${config.devServer.sleepAfterMinutes} must be 0 (never) or more`);
   }
   if (config.agent.timeoutMs < 1000) {
     problems.push(`agent.timeoutMs: ${config.agent.timeoutMs} is too short to be useful`);

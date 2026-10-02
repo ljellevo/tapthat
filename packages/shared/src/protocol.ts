@@ -125,6 +125,11 @@ export interface Health {
   /** `session`: changes collect in a playground session and reach `dev` on Commit. */
   mode: 'commit' | 'session';
   session: { id: string; state: SessionState; pending: number } | null;
+  /**
+   * `devServer.sleepAfterMinutes`: whether the dev servers are stopped for lack
+   * of use. Null when the sidecar never sleeps them; absent from older sidecars.
+   */
+  sleep?: { asleep: boolean; afterMinutes: number } | null;
 }
 
 // ── Sessions (git.mode "session": the playground flow) ─────────────────────

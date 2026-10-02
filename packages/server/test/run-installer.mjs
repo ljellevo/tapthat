@@ -191,6 +191,7 @@ if (process.env.SHOW_OUTPUT) console.log(first.output);
   eq('…and a domain', Object.keys(ws.networking.serviceDomains), [origin]);
   const w = vars('tapthat', 'workspace');
   eq('the sidecar is switched on', [w.TAPTHAT_ENABLE, w.TAPTHAT_PROXY, w.PORT], ['1', '1', '8080']);
+  eq('the playground sleeps after 30 minutes without use', w.TAPTHAT_SLEEP_AFTER_MINUTES, '30');
   eq('it clones the site', w.TAPTHAT_REPO_URL, 'https://github.com/dealroom-no/app.git');
   eq('it has the GitHub token it was given', w.TAPTHAT_GIT_TOKEN, 'good-token');
   check('it has generated secrets', w.TAPTHAT_TOKEN?.length >= 32 && Buffer.from(w.TAPTHAT_ENCRYPTION_KEY, 'base64').length === 32);

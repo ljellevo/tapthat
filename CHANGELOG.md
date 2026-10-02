@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A playground sleeps when nobody uses it** (`devServer.sleepAfterMinutes`,
+  `TAPTHAT_SLEEP_AFTER_MINUTES`). After that long without use, the sidecar stops every dev
+  server and holds their ports with a page that wakes them on a click. The panel shows
+  **Asleep** with **Wake up**, and offers **Sleep** between sessions. A tab left open
+  doesn't keep it awake. The installer sets 30 minutes for the workspaces it creates.
+  Off unless configured. See [Sleep](docs/playground.md#sleep).
 - **Root-owned files anywhere in the workspace are given back to `node` at boot.** The
   entrypoint only checked the top of `/workspace/repo` and `/workspace/state`, so a
   multi-repo workspace (`/workspace/repos`) — or a file a root shell such as `railway ssh`

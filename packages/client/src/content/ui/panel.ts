@@ -22,7 +22,7 @@ export interface PanelOptions {
   onSessionAction?(action: SessionAction): void;
 }
 
-export type SessionAction = 'start' | 'commit' | 'discard';
+export type SessionAction = 'start' | 'commit' | 'discard' | 'wake' | 'sleep';
 
 /**
  * The playground session strip (git.mode "session"). Like BatchView, a view

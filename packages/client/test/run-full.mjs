@@ -294,5 +294,58 @@ async function boot(url, respond = () => HEALTH) {
   window.close();
 }
 
+// ── A playground that sleeps (devServer.sleepAfterMinutes) ───────────────────
+{
+  const sidecar = { asleep: false, calls: [] };
+  const respond = (path, method, body) => {
+    if (method === 'POST') sidecar.calls.push(`${method} ${path} ${JSON.stringify(body ?? {})}`);
+    if (path === '/healthz') return { ...HEALTH, mode: 'session', session: null, sleep: { asleep: sidecar.asleep, afterMinutes: 30 } };
+    if (path === '/api/sleep') { sidecar.asleep = true; return { asleep: true }; }
+    if (path === '/wake') { sidecar.asleep = false; return { asleep: false }; }
+    if (path.startsWith('/api/session')) return { mode: 'session', session: null, last: null };
+    return HEALTH;
+  };
+  const { window, button, root } = await boot('http://localhost:3000/pricing', respond);
+  await window.chrome.storage.local.set({
+    'av:settings': { sidecarUrl: 'http://localhost:7420', token: 't', credential: null, allowedOrigins: ['http://localhost:3000'], reviewerName: 'Ana' },
+  });
+  window.chrome._send({ type: 'TOGGLE' });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  await settle();
+  const strip = () => root()?.querySelector('.session');
+  check('sleep: between sessions, the strip offers Sleep beside Start session', !!button('Sleep') && !!button('Start session'));
+
+  button('Sleep').click();
+  await settle();
+  check('Sleep posts to /api/sleep', sidecar.calls.some((c) => c.startsWith('POST /api/sleep')), sidecar.calls.join(' | '));
+  check('asleep, the strip says so and offers only Wake up',
+    strip()?.textContent.includes('Asleep') && strip()?.textContent.includes('30 minutes') && !!button('Wake up') && !button('Start session'),
+    strip()?.textContent);
+  check('asleep, Send to Claude is hidden', button('Send to Claude')?.hidden === true);
+
+  button('Wake up').click();
+  await settle();
+  check('Wake up posts to /wake', sidecar.calls.some((c) => c.startsWith('POST /wake')), sidecar.calls.join(' | '));
+  check('awake again, Start session is back', !!button('Start session') && !button('Wake up'));
+  window.close();
+}
+
+{
+  // A sidecar that never sleeps, or predates sleep, gets no Sleep button.
+  const respond = (path) => {
+    if (path === '/healthz') return { ...HEALTH, mode: 'session', session: null };
+    if (path.startsWith('/api/session')) return { mode: 'session', session: null, last: null };
+    return HEALTH;
+  };
+  const { window, button } = await boot('http://localhost:3000/pricing', respond);
+  await window.chrome.storage.local.set({
+    'av:settings': { sidecarUrl: 'http://localhost:7420', token: 't', credential: null, allowedOrigins: ['http://localhost:3000'], reviewerName: 'Ana' },
+  });
+  window.chrome._send({ type: 'TOGGLE' });
+  await new Promise((r) => setTimeout(r, 150));
+  check('sleep: no Sleep button where the sidecar does not sleep', !!button('Start session') && !button('Sleep'));
+  window.close();
+}
+
 console.log(failed === 0 ? `PASS — ${total} Light/Full mode checks` : `FAIL — ${failed} of ${total} Light/Full mode checks`);
 process.exit(failed === 0 ? 0 : 1);

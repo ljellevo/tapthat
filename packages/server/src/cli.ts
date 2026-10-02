@@ -11,6 +11,7 @@ import { makeInstallStep } from './install-step';
 import { CONFIG_FILENAME, loadConfig, type Config, type RepoConfig } from './config';
 import { deriveKey } from './credentials';
 import { DevServers, waitForDevServer } from './dev-server';
+import { Sleeper } from './sleep';
 import { sequencer } from './events';
 import { assertNotProduction, detectPlatform } from './guard';
 import { createHttpServer, ROUTE_PREFIX } from './http';
@@ -386,6 +387,23 @@ async function cmdServe(): Promise<number> {
   );
   servers.startAll();
 
+  // Only the servers this process started can be stopped, and only those on
+  // this machine can have their ports held while asleep.
+  const ports = config.repos
+    .filter((r) => servers.isRunning(r.name))
+    .map((r) => new URL(r.devServer!.url))
+    .filter((u) => ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname) && u.port)
+    .map((u) => Number(u.port));
+  const sleep =
+    config.devServer.sleepAfterMinutes > 0 && ports.length
+      ? new Sleeper({
+          afterMs: config.devServer.sleepAfterMinutes * 60_000,
+          ports,
+          stopServers: () => servers.stopAll(),
+          startServers: () => servers.startAll(),
+        })
+      : undefined;
+
   const clean = config.session.clean
     ? makeCleanStep({
         repos: workspace.entries,
@@ -478,7 +496,9 @@ async function cmdServe(): Promise<number> {
     agentVersion,
     audit,
     workspace,
+    sleep,
   });
+  sleep?.start();
 
   // Listen before the dev server is ready: a PaaS health check on the sidecar
   // must pass while a cold `next dev` is still compiling.
@@ -512,6 +532,7 @@ async function cmdServe(): Promise<number> {
       : `  push    ${config.git.push ? `on → ${config.git.remote}/${config.branch}` : 'off'}`,
   );
   console.log(`  origins ${config.allowedOrigins.join(', ') || '(none — Apply will be refused)'}`);
+  if (sleep) console.log(`  sleep   after ${sleep.afterMinutes} minutes without use (ports ${ports.join(', ')})`);
   console.log('');
   console.log('  Paste into the extension options page:');
   console.log(`    Sidecar URL  ${sidecarUrl}`);
@@ -525,6 +546,7 @@ async function cmdServe(): Promise<number> {
   console.log('');
 
   const shutdown = () => {
+    void sleep?.close();
     void servers.stopAll();
     server.close(() => {
       void store.flush().then(() => process.exit(0));

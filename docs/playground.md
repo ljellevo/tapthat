@@ -100,6 +100,10 @@ It lists every change and asks once. Then it:
 - commits a generated `tapthat.config.json` to the site's repository, unless one exists;
 - deploys, waits until the workspace is healthy, and makes the first copy of `dev`'s data.
 
+The workspace it creates [sleeps](#sleep) after 30 minutes without use
+(`TAPTHAT_SLEEP_AFTER_MINUTES`). Running the installer again adds that to an existing
+playground that doesn't have it yet.
+
 At the end it prints what to put in the extension.
 
 It also fixes two things Railway gets wrong when it creates services outside its
@@ -377,6 +381,40 @@ Everything in [setup.md's reference](setup.md#configuration-reference), plus:
 | `session.snapshot.stopServers` | none | | Dev servers stopped while their databases are replaced |
 | `session.onStart` | none | | Extra commands after the copy, for data that isn't in Postgres |
 | `session.clean` | off | | `true`, or `{"keep": ["generated"]}`: Start session clears ignored files first. See [A clean slate](#a-clean-slate) |
+| `devServer.sleepAfterMinutes` | `0` (never) | `TAPTHAT_SLEEP_AFTER_MINUTES` | Stops the dev servers after this long without use. See [Sleep](#sleep) |
+
+### Sleep
+
+A playground is idle most of the time, and its dev servers are most of its memory: on a
+PaaS that bills memory by the minute, they cost the same at 3 a.m. as during a review.
+With `devServer.sleepAfterMinutes`, the sidecar stops every dev server after that long
+without use and keeps running alone, at a fraction of the memory.
+
+**What counts as use:**
+- a request through the sidecar: the site it proxies, or anything the panel does apart
+  from checking status;
+- a new connection to a dev server's port from outside the workspace, such as a gateway
+  loading a page. A tab left open isn't use: its hot-reload socket is one connection that
+  never changes, so a forgotten tab doesn't keep the playground running overnight;
+- a batch or a session step in progress, however long it takes.
+
+**While it sleeps**, the sidecar holds each dev server's port. A page request gets a page
+that says the playground is asleep, with a **Wake it up** button. Loading that page doesn't
+wake anything: a forgotten tab that reloads itself mustn't undo the sleep. Once woken, by
+anyone, the page reloads itself when the dev servers answer. The panel shows **Asleep** with
+**Wake up**, and between sessions it offers **Sleep** to stop the dev servers right away.
+Send to Claude, Start session, Save session changes and Cancel session wake it first.
+
+Waking starts the dev servers the way a boot does, without the install. The first page
+then compiles from cold, which takes a minute or two for a Next.js app. The session, the
+data and every checkout are kept as they were.
+
+Sleep only applies to dev servers the sidecar starts itself (`devServer.start`) and that
+listen on `localhost` in the workspace. It reads connections from `/proc/net`, so outside
+Linux only requests through the sidecar count as use.
+
+On Railway, the workspace still counts as running while asleep, because the sidecar
+still listens. What changes is how much memory it uses.
 
 ### A clean slate
 

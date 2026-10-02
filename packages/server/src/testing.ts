@@ -17,3 +17,4 @@ export { DevServers } from './dev-server';
 export { makeSnapshotHooks } from './snapshot';
 export { makeCleanStep, pruneIgnored } from './clean';
 export { makeInstallStep } from './install-step';
+export { Sleeper, parseProcNetLine } from './sleep';

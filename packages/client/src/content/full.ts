@@ -164,6 +164,12 @@ export async function sessionAction(action: SessionAction): Promise<void> {
     if (action === 'start') {
       session = await client.startSession(who);
       toast('Starting a session — copying the latest from dev');
+    } else if (action === 'wake') {
+      await client.wake();
+      toast('Waking up — the dev servers take a minute or two');
+    } else if (action === 'sleep') {
+      await client.sleep();
+      toast('Asleep — the dev servers are stopped until someone wakes them');
     } else if (action === 'commit') {
       await client.commitSession(who);
       toast('Session changes saved to dev');
@@ -464,16 +470,28 @@ function sessionView(): SessionView | null {
   const last = session?.last ?? null;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+  const sleep = health?.sleep ?? null;
+  if (sleep?.asleep) {
+    return {
+      tone: 'idle',
+      title: 'Asleep',
+      detail: `The dev servers were stopped after ${plural(sleep.afterMinutes, 'minute')} without use, to save memory. ${s ? 'The session is kept. ' : ''}Waking takes a minute or two.`,
+      actions: [{ action: 'wake', label: sessionBusy === 'wake' ? 'Waking…' : 'Wake up', primary: true, disabled: !!sessionBusy }],
+    };
+  }
+
   if (!s) {
     const recent = last && Date.now() - Date.parse(last.at) < 30 * 60_000;
     const start = { action: 'start' as const, label: sessionBusy === 'start' ? 'Starting…' : 'Start session', primary: true, disabled: !!sessionBusy };
+    // Off by hand, between sessions; it also goes to sleep by itself.
+    const idle = sleep ? [{ action: 'sleep' as const, label: sessionBusy === 'sleep' ? 'Stopping…' : 'Sleep', disabled: !!sessionBusy }, start] : [start];
     if (recent && last.outcome === 'committed') {
       return {
         tone: 'done',
         title: 'Saved to dev',
         detail: `${last.by ? `Saved by ${last.by}. ` : ''}The dev environment deploys it from here.`,
         lines: last.notices.map((n) => `⚠ ${n}`),
-        actions: [start],
+        actions: idle,
       };
     }
     if (recent && last.outcome === 'discarded') {
@@ -481,14 +499,14 @@ function sessionView(): SessionView | null {
         tone: 'idle',
         title: 'Session cancelled',
         detail: 'The code and data are back to dev.',
-        actions: [start],
+        actions: idle,
       };
     }
     return {
       tone: 'idle',
       title: 'No session',
       detail: 'Start a session to apply changes here. It copies the latest code and data from dev into this playground, which takes a few minutes.',
-      actions: [start],
+      actions: idle,
     };
   }
 
@@ -558,6 +576,7 @@ function statusLine(): { text: string | null; tone: 'info' | 'warn' | 'error' } 
   // Which repos and commits the playground is on is not the reviewer's concern; only trouble is.
   const mine = batches.list().some((b) => !isFinished(b));
   const queued = health.queue.depth > 0 && !mine ? `${health.queue.depth} job${health.queue.depth === 1 ? '' : 's'} ahead` : null;
+  if (health.sleep?.asleep) return { text: 'Asleep', tone: 'info' };
   if (!health.devServer.reachable) return { text: ['Dev server not responding', queued].filter(Boolean).join(' · '), tone: 'warn' };
   return { text: queued, tone: 'info' };
 }
@@ -578,6 +597,6 @@ export function render(): void {
   panel.setExportFallback(!!trouble || !!healthError || !!health?.killSwitch);
   panel.setApplyBusy(submitting || list.some((b) => !isFinished(b)));
   panel.setSession(sessionView());
-  // In a playground, Apply waits for Start session.
-  panel.setApplyAllowed(!sessionMode() || session?.session?.state === 'active');
+  // In a playground, Apply waits for Start session, and for Wake up.
+  panel.setApplyAllowed(!health?.sleep?.asleep && (!sessionMode() || session?.session?.state === 'active'));
 }
