@@ -393,10 +393,14 @@ without use and keeps running alone, at a fraction of the memory.
 **What counts as use:**
 - a request through the sidecar: the site it proxies, or anything the panel does apart
   from checking status;
-- a new connection to a dev server's port from outside the workspace, such as a gateway
-  loading a page. A tab left open isn't use: its hot-reload socket is one connection that
-  never changes, so a forgotten tab doesn't keep the playground running overnight;
+- a request a dev server logs, such as Next.js's `GET /rooms 200 in 41ms`. This is how
+  traffic that never passes the sidecar is seen, such as a gateway loading a page;
 - a batch or a session step in progress, however long it takes.
+
+A hot-reload socket isn't use. A tab left open on a laptop reconnects its socket every
+few minutes all night, whenever the laptop wakes, and that mustn't keep the playground
+running. The sidecar's own health checks are plain TCP connects, so they log nothing
+either.
 
 **While it sleeps**, the sidecar holds each dev server's port. A page request gets a page
 that says the playground is asleep, with a **Wake it up** button. Loading that page doesn't
@@ -410,11 +414,15 @@ then compiles from cold, which takes a minute or two for a Next.js app. The sess
 data and every checkout are kept as they were.
 
 Sleep only applies to dev servers the sidecar starts itself (`devServer.start`) and that
-listen on `localhost` in the workspace. It reads connections from `/proc/net`, so outside
-Linux only requests through the sidecar count as use.
+listen on `localhost` in the workspace. Their output passes through the sidecar so it can
+read the request lines. A dev server that logs no requests is only seen in use through
+the sidecar.
 
-On Railway, the workspace still counts as running while asleep, because the sidecar
-still listens. What changes is how much memory it uses.
+**A restart keeps it asleep.** If the sidecar was asleep when it stopped, it starts again
+asleep, holding the ports, until someone wakes it. With Railway's serverless setting on
+the workspace, an asleep sidecar sends nothing, so Railway stops the whole container a few
+minutes later. Any request starts the container again, a forgotten tab's socket included,
+and without this a restart would start every dev server.
 
 ### A clean slate
 

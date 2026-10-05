@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 
@@ -10,15 +9,26 @@ const ASLEEP_HEADER = 'x-tapthat-asleep';
 
 const CHECK_EVERY_MS = 60_000;
 
+/**
+ * A request as dev servers log it: `GET /rooms 200 in 41ms` (Next.js), `GET /x
+ * 200 3.1 ms` (morgan). A hot-reload socket and a build asset log nothing.
+ */
+const REQUEST_LINE = /^\s*(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) \/\S* \d{3}\b/;
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+export function isRequestLine(line: string): boolean {
+  return REQUEST_LINE.test(line.replace(ANSI, ''));
+}
+
 export interface SleeperDeps {
   /** Stopped after this long without use. */
   afterMs: number;
-  /** The dev servers' ports: watched for traffic while awake, held while asleep. */
+  /** The dev servers' ports, held while asleep. */
   ports: number[];
   stopServers: () => Promise<void>;
   startServers: () => void;
-  /** Remote connections to `ports`, or null where the platform can't tell (not Linux). */
-  connections?: (ports: number[]) => Promise<Set<string> | null>;
+  /** Told after every change, so a restart can come back the way it was. */
+  onChange?: (asleep: boolean) => void;
   now?: () => number;
 }
 
@@ -27,11 +37,11 @@ export interface SleeperDeps {
  * request. Most of a playground's life is idle, and its dev servers are most of
  * its memory; what is left asleep is this process.
  *
- * Use is what reaches the dev servers or the sidecar. Traffic that comes past the
- * sidecar (a gateway calling a dev server's port directly) is seen as a change
- * in the set of connections to those ports: a new page load opens one, and an
- * upstream pool closes its idle ones within minutes. An open tab's hot-reload
- * socket changes nothing, so a tab left open overnight does not keep it awake.
+ * Use is a request: one through the sidecar, or one a dev server logs, which is
+ * how traffic that comes past the sidecar (a gateway calling a dev server's port
+ * directly) is seen. A hot-reload socket is not use. A tab left open reconnects
+ * its socket every few minutes all night, whenever the laptop it is on wakes,
+ * and logs no request doing it.
  *
  * While asleep, the sidecar holds the dev servers' ports and answers with a page
  * that wakes the workspace on a click, never on its own: a forgotten tab
@@ -41,17 +51,14 @@ export class Sleeper {
   private lastUse: number;
   private asleep = false;
   private holders: Server[] = [];
-  private seen: Set<string> | null = null;
   private busy: Array<() => boolean> = [];
   private timer: ReturnType<typeof setInterval> | undefined;
   /** Sleep and wake run one at a time, in the order asked. */
   private chain: Promise<void> = Promise.resolve();
   private readonly now: () => number;
-  private readonly connections: (ports: number[]) => Promise<Set<string> | null>;
 
   constructor(private readonly deps: SleeperDeps) {
     this.now = deps.now ?? Date.now;
-    this.connections = deps.connections ?? remoteConnections;
     this.lastUse = this.now();
   }
 
@@ -67,6 +74,11 @@ export class Sleeper {
   touch(): void {
     this.lastUse = this.now();
   }
+
+  /** A line a dev server printed: use, when it is a request. */
+  readonly noteOutput = (line: string): void => {
+    if (isRequestLine(line)) this.touch();
+  };
 
   /** Never sleeps while this says the workspace is working (a batch, a session step). */
   busyWhen(fn: () => boolean): void {
@@ -87,9 +99,6 @@ export class Sleeper {
   /** One look at the workspace; sleeps it when it has been idle long enough. */
   async check(): Promise<void> {
     if (this.asleep) return;
-    const current = await this.connections(this.deps.ports);
-    if (current && this.seen && !sameSet(current, this.seen)) this.touch();
-    this.seen = current;
     if (this.busy.some((fn) => fn())) this.touch();
     if (this.now() - this.lastUse >= this.deps.afterMs) {
       console.log(`[tapthat] no use for ${this.afterMinutes} minutes`);
@@ -102,6 +111,7 @@ export class Sleeper {
       if (this.asleep) return;
       console.log('[tapthat] asleep: stopping the dev servers');
       this.asleep = true;
+      this.deps.onChange?.(true);
       await this.deps.stopServers();
       this.holders = (await Promise.all(this.deps.ports.map((port) => this.hold(port)))).filter((s): s is Server => !!s);
     });
@@ -113,7 +123,7 @@ export class Sleeper {
       console.log('[tapthat] waking: starting the dev servers');
       await this.release();
       this.asleep = false;
-      this.seen = null;
+      this.deps.onChange?.(false);
       this.touch();
       this.deps.startServers();
     });
@@ -177,56 +187,6 @@ export class Sleeper {
       ),
     );
   }
-}
-
-function sameSet(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const x of a) if (!b.has(x)) return false;
-  return true;
-}
-
-/**
- * Established connections to `ports` from outside this machine, by socket
- * inode, read from /proc/net. Loopback is left out: those are the dev servers
- * calling each other, and the sidecar's own proxy, which touches on its own.
- */
-export async function remoteConnections(ports: number[]): Promise<Set<string> | null> {
-  const wanted = new Set(ports);
-  const found = new Set<string>();
-  let readable = false;
-  for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
-    let text: string;
-    try {
-      text = await readFile(file, 'utf8');
-      readable = true;
-    } catch {
-      continue;
-    }
-    for (const line of text.split('\n').slice(1)) {
-      const conn = parseProcNetLine(line);
-      if (conn && conn.established && !conn.loopback && wanted.has(conn.localPort)) found.add(conn.inode);
-    }
-  }
-  return readable ? found : null;
-}
-
-/** One row of /proc/net/tcp or tcp6. */
-export function parseProcNetLine(
-  line: string,
-): { localPort: number; established: boolean; loopback: boolean; inode: string } | null {
-  const fields = line.trim().split(/\s+/);
-  if (fields.length < 10) return null;
-  const [local, remote, state, inode] = [fields[1]!, fields[2]!, fields[3]!, fields[9]!];
-  const localPort = parseInt(local.split(':')[1] ?? '', 16);
-  const remoteHost = remote.split(':')[0] ?? '';
-  if (!Number.isFinite(localPort)) return null;
-  return {
-    localPort,
-    established: state === '01',
-    // 127.0.0.1 (also as ::ffff:127.0.0.1) and ::1, as the kernel writes them.
-    loopback: remoteHost.endsWith('0100007F') || remoteHost === '00000000000000000000000001000000',
-    inode,
-  };
 }
 
 function asleepPage(minutes: number): string {

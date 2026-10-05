@@ -32,6 +32,8 @@ interface Shape {
   credentials: Record<string, StoredCredential>;
   session?: StoredSession | null;
   lastSession?: SessionOutcome | null;
+  /** The dev servers were asleep when the process last ran, so a restart keeps them so. */
+  asleep?: boolean;
 }
 
 const EMPTY: Shape = { version: 1, batches: {}, credentials: {}, session: null, lastSession: null };
@@ -147,6 +149,15 @@ export class Store {
 
   putLastSession(outcome: SessionOutcome): void {
     this.data.lastSession = outcome;
+    this.schedule();
+  }
+
+  isAsleep(): boolean {
+    return this.data.asleep ?? false;
+  }
+
+  putAsleep(asleep: boolean): void {
+    this.data.asleep = asleep;
     this.schedule();
   }
 
