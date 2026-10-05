@@ -378,31 +378,39 @@ async function cmdServe(): Promise<number> {
     console.error('[tapthat] continuing without it: Start session copies the data and prepares again');
   }
 
-  const servers = new DevServers(
-    config.devServer.start
-      ? config.repos
-          .filter((r) => r.devServer?.command)
-          .map((r) => ({ name: r.name, command: r.devServer!.command!, cwd: r.root, url: r.devServer!.url, env: r.devServer!.env }))
-      : [],
-  );
-  servers.startAll();
-
-  // Only the servers this process started can be stopped, and only those on
-  // this machine can have their ports held while asleep.
-  const ports = config.repos
-    .filter((r) => servers.isRunning(r.name))
-    .map((r) => new URL(r.devServer!.url))
+  const specs = config.devServer.start
+    ? config.repos
+        .filter((r) => r.devServer?.command)
+        .map((r) => ({ name: r.name, command: r.devServer!.command!, cwd: r.root, url: r.devServer!.url, env: r.devServer!.env }))
+    : [];
+  // Only the servers this process starts can be stopped, and only those on this
+  // machine can have their ports held while asleep.
+  const ports = specs
+    .map((s) => new URL(s.url))
     .filter((u) => ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname) && u.port)
     .map((u) => Number(u.port));
-  const sleep =
-    config.devServer.sleepAfterMinutes > 0 && ports.length
-      ? new Sleeper({
-          afterMs: config.devServer.sleepAfterMinutes * 60_000,
-          ports,
-          stopServers: () => servers.stopAll(),
-          startServers: () => servers.startAll(),
-        })
-      : undefined;
+  const sleeps = config.devServer.sleepAfterMinutes > 0 && ports.length > 0;
+
+  // The dev servers' request lines are how use that never passes the sidecar is seen.
+  let sleep: Sleeper | undefined;
+  const servers = new DevServers(specs, sleeps ? (line) => sleep?.noteOutput(line) : undefined);
+  if (sleeps) {
+    sleep = new Sleeper({
+      afterMs: config.devServer.sleepAfterMinutes * 60_000,
+      ports,
+      stopServers: () => servers.stopAll(),
+      startServers: () => servers.startAll(),
+      onChange: (asleep) => store.putAsleep(asleep),
+    });
+  }
+  // A platform that stops an idle container (Railway's serverless) starts it
+  // again for any request, a forgotten tab's hot-reload socket included. Asleep
+  // when it stopped, it comes back asleep, and only Wake starts the dev servers.
+  if (sleep && store.isAsleep()) await sleep.sleep();
+  else {
+    if (store.isAsleep()) store.putAsleep(false);
+    servers.startAll();
+  }
 
   const clean = config.session.clean
     ? makeCleanStep({

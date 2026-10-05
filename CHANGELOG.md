@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A tab left open no longer keeps a playground awake.** Sleep counted every new
+  connection to a dev server as use, and a tab on a laptop reconnects its hot-reload socket
+  every few minutes all night: Dealroom's playground never slept. Use is now a request a
+  dev server logs (`GET /rooms 200 in 41ms`), or a request through the sidecar. The
+  sidecar's own health checks are TCP connects now, so they log nothing, and they no
+  longer compile the root page on every poll. A hot-reload socket through the sidecar
+  isn't use either.
+- **A restart keeps a sleeping playground asleep.** Railway's serverless stops an idle
+  container and starts it again for any request, and a fresh start used to bring up every
+  dev server. Only Wake does that now.
 - **A playground sleeps when nobody uses it** (`devServer.sleepAfterMinutes`,
   `TAPTHAT_SLEEP_AFTER_MINUTES`). After that long without use, the sidecar stops every dev
   server and holds their ports with a page that wakes them on a click. The panel shows

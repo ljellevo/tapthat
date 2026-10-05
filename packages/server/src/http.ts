@@ -18,6 +18,7 @@ import type { Audit } from './audit';
 import type { Config } from './config';
 import { CredentialError, issue, resolve as resolveCredential } from './credentials';
 import { runJob } from './job';
+import { listening } from './dev-server';
 import { createProxy } from './proxy';
 import { Queue } from './queue';
 import type { Repo } from './repo';
@@ -251,7 +252,7 @@ export function createHttpServer(deps: ServerDeps): Server {
         .map((e) => ({ name: e.name, url: e === ws.primary ? config.devServerUrl : e.config?.devServer?.url }))
         .filter((s): s is { name: string; url: string } => !!s.url);
       const devServers = await Promise.all(
-        servers.map(async (s) => ({ ...s, reachable: await reachable(s.url) })),
+        servers.map(async (s) => ({ ...s, reachable: await listening(s.url) })),
       );
       const { name: _name, ...primary } = repos[0]!;
       json(res, 200, {
@@ -665,18 +666,6 @@ export function createHttpServer(deps: ServerDeps): Server {
     json(res, 202, { revertSha, commits: outcome.commits } satisfies RevertAccepted);
   }
 
-  async function reachable(target: string): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 1500);
-      await fetch(target, { signal: controller.signal });
-      clearTimeout(timer);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     const path = sidecarPath(url.pathname, !!proxy);
@@ -708,8 +697,8 @@ export function createHttpServer(deps: ServerDeps): Server {
 
   if (proxy) {
     server.on('upgrade', (req, socket, head) => {
+      // Not use: a tab left open reconnects its hot-reload socket for as long as it is open.
       if (sleep?.isAsleep) return sleep.refuse(req, socket);
-      sleep?.touch();
       proxy.upgrade(req, socket, head);
     });
   }

@@ -2,11 +2,12 @@
  * Sleep: the dev servers stop after a stretch without use and start again on
  * request. What counts as use decides what the playground costs, so both sides
  * are checked: use keeps it awake, and things that are not use (an open tab's
- * socket, the panel's polling, a tab reloading the asleep page) do not.
+ * hot-reload socket, the panel's polling, a tab reloading the asleep page) do not.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { connect as connectTcp } from 'node:net';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,7 @@ const bundle = await esbuild.build({
 const modDir = mkdtempSync(join(tmpdir(), 'tapthat-mod-'));
 const modPath = join(modDir, 'mod.mjs');
 writeFileSync(modPath, bundle.outputFiles[0].text);
-const { Sleeper, parseProcNetLine, createHttpServer, Store, Repo, defaults, deriveKey } = await import(modPath);
+const { Sleeper, isRequestLine, listening, DevServers, createHttpServer, Store, Repo, defaults, deriveKey } = await import(modPath);
 
 let failed = 0;
 let total = 0;
@@ -45,13 +46,13 @@ async function freePort() {
 
 /** A sleeper on a fake clock, with fake dev servers and a scripted set of connections. */
 async function makeSleeper(ports = []) {
-  const state = { now: 0, running: true, stops: 0, starts: 0, sockets: new Set() };
+  const state = { now: 0, running: true, stops: 0, starts: 0, changes: [] };
   const sleeper = new Sleeper({
     afterMs: 30 * MINUTE,
     ports,
     stopServers: async () => { state.running = false; state.stops++; },
     startServers: () => { state.running = true; state.starts++; },
-    connections: async () => new Set(state.sockets),
+    onChange: (asleep) => state.changes.push(asleep),
     now: () => state.now,
   });
   return { sleeper, state };
@@ -86,24 +87,36 @@ async function makeSleeper(ports = []) {
 }
 {
   const { sleeper, state } = await makeSleeper();
-  await sleeper.check();
-  // A gateway calls a dev server directly: the sidecar sees only new connections.
+  // A gateway calls a dev server directly: the sidecar sees its request lines.
   for (let m = 1; m <= 40; m++) {
     state.now = m * MINUTE;
-    state.sockets = new Set([`conn-${m}`]);
+    if (m % 10 === 0) sleeper.noteOutput(' GET /rooms 200 in 41ms (next.js: 4ms, application-code: 37ms)');
     await sleeper.check();
   }
-  check('new connections to the dev servers keep it awake', !sleeper.isAsleep);
+  check('a request a dev server logs keeps it awake', !sleeper.isAsleep);
 }
 {
   const { sleeper, state } = await makeSleeper();
-  // A tab left open: its hot-reload socket stays, and nothing else happens.
-  state.sockets = new Set(['hmr-socket']);
+  // A tab left open overnight: its hot-reload socket reconnects every few
+  // minutes, and the dev servers print what they print when idle.
   for (let m = 0; m <= 30; m++) {
     state.now = m * MINUTE;
+    sleeper.noteOutput('✓ Compiled in 120ms');
+    sleeper.noteOutput('[00:16:28] INFO (api): request completed');
     await sleeper.check();
   }
-  check('an open hot-reload socket alone does not keep it awake', sleeper.isAsleep);
+  check('output that is not a request does not keep it awake', sleeper.isAsleep);
+  check('sleeping is reported, so a restart can come back asleep', state.changes.join() === 'true');
+  await sleeper.wake();
+  check('and so is waking', state.changes.join() === 'true,false');
+}
+{
+  check('a Next.js request line is a request', isRequestLine(' GET /rooms/1/members 200 in 156ms (next.js: 15ms, application-code: 141ms)'));
+  check('so is one with colours', isRequestLine('\x1b[1mPOST\x1b[22m /api/session 201 in 9ms'));
+  check('and a morgan one', isRequestLine('GET /health 200 1.234 ms - 2'));
+  check('a Next.js banner is not', !isRequestLine('   - Local:         http://localhost:3000'));
+  check('nor a compile', !isRequestLine(' ✓ Compiled /rooms in 1.2s'));
+  check('nor a Prisma line', !isRequestLine('Datasource "db": PostgreSQL database "dealroom_auth"'));
 }
 {
   const { sleeper, state } = await makeSleeper();
@@ -127,20 +140,32 @@ async function makeSleeper(ports = []) {
   await sleeper.close();
 }
 
-// ── /proc/net/tcp ───────────────────────────────────────────────────────────
+// ── probes ──────────────────────────────────────────────────────────────────
 {
-  const header = '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode';
-  check('the header row is not a connection', parseProcNetLine(header)?.localPort === undefined || Number.isNaN(parseProcNetLine(header)?.localPort));
-  const v4 = parseProcNetLine('   0: 0100007F:0BB8 0100007F:D2F0 01 00000000:00000000 00:00000000 00000000  1000        0 4242 1 0000000000000000 20 4 30 10 -1');
-  check('IPv4 loopback is recognised', v4?.localPort === 3000 && v4.established && v4.loopback && v4.inode === '4242');
-  const v6 = parseProcNetLine('   1: 00000000000000000000000000000000:0BB9 B80D01200000000000000000A1B2C3D4:9C40 01 00000000:00000000 00:00000000 00000000  1000        0 777 1 0000000000000000 20 4 30 10 -1');
-  check('a private-network IPv6 peer is remote', v6?.localPort === 3001 && v6.established && !v6.loopback);
-  const mapped = parseProcNetLine('   2: 00000000000000000000000000000000:0BB8 0000000000000000FFFF00000100007F:9C41 01 00000000:00000000 00:00000000 00000000  1000        0 778 1 0000000000000000 20 4 30 10 -1');
-  check('IPv4-mapped loopback is loopback', mapped?.loopback === true);
-  const one = parseProcNetLine('   3: 00000000000000000000000001000000:0BB8 00000000000000000000000001000000:9C42 01 00000000:00000000 00:00000000 00000000  1000        0 779 1 0000000000000000 20 4 30 10 -1');
-  check('::1 is loopback', one?.loopback === true);
-  const listen = parseProcNetLine('   4: 00000000000000000000000000000000:0BB8 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 780 1 0000000000000000 20 4 30 10 -1');
-  check('a listening socket is not a connection', listen?.established === false);
+  // The sidecar's own probes must not print a request line on a dev server, or
+  // an open panel (polling health every 20 s) would keep the workspace awake.
+  let requests = 0;
+  const devServer = createServer((_q, r) => { requests++; r.end('dev'); });
+  await new Promise((r) => devServer.listen(0, '::', r));
+  const { port } = devServer.address();
+  check('a listening dev server is seen as up', await listening(`http://localhost:${port}`));
+  check('without a request reaching it', requests === 0);
+  await new Promise((r) => devServer.close(r));
+  check('a closed port is seen as down', !(await listening(`http://localhost:${port}`)));
+}
+{
+  const lines = [];
+  const dir = mkdtempSync(join(tmpdir(), 'tapthat-out-'));
+  const servers = new DevServers(
+    [{ name: 'app', command: `node -e "console.log('GET /a 200 in 1ms'); process.stdout.write('GET /b 200'); setTimeout(() => console.log(' in 2ms'), 50); setInterval(() => {}, 1000)"`, cwd: dir, url: 'http://localhost:1', env: {} }],
+    (line) => lines.push(line),
+  );
+  servers.startAll();
+  await new Promise((r) => setTimeout(r, 1500));
+  await servers.stopAll();
+  check("a dev server's output reaches the sleeper line by line, split chunks joined",
+    lines.includes('GET /a 200 in 1ms') && lines.includes('GET /b 200 in 2ms'), JSON.stringify(lines));
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // ── the held ports while asleep ─────────────────────────────────────────────
@@ -237,10 +262,85 @@ async function makeSleeper(ports = []) {
   await sleeper.check();
   check('a proxied request is use', !sleeper.isAsleep);
 
+  state.now = 200 * MINUTE;
+  sleeper.touch();
+  state.now = 229 * MINUTE;
+  await new Promise((done) => {
+    const socket = connectTcp(server.address().port, '127.0.0.1', () => {
+      socket.write('GET /_next/hmr HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
+      setTimeout(() => { socket.destroy(); done(); }, 200);
+    });
+    socket.on('error', done);
+  });
+  state.now = 230 * MINUTE;
+  await sleeper.check();
+  check('a hot-reload socket through the sidecar is not use', sleeper.isAsleep);
+
   await new Promise((r) => server.close(r));
   await new Promise((r) => upstream.close(r));
   await sleeper.close();
   rmSync(repoDir, { recursive: true, force: true });
+}
+
+// ── a restart comes back asleep ─────────────────────────────────────────────
+{
+  // Railway's serverless stops an idle container and starts it again for any
+  // request: a forgotten tab's hot-reload socket must not start the dev servers.
+  const cli = join(modDir, 'cli.mjs');
+  await esbuild.build({
+    entryPoints: [join(pkgRoot, 'src', 'cli.ts')],
+    bundle: true, platform: 'node', format: 'esm', target: 'node20',
+    packages: 'bundle', outfile: cli, logLevel: 'silent',
+  });
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const app = mkdtempSync(join(tmpdir(), 'tapthat-boot-'));
+  const devPort = await freePort();
+  const sidecarPort = await freePort();
+  writeFileSync(join(app, 'dev.js'),
+    `require('fs').writeFileSync('started', 'yes');\n` +
+    `require('http').createServer((q, r) => { console.log(q.method + ' ' + q.url + ' 200 in 1ms'); r.end('dev'); }).listen(${devPort});\n`);
+  writeFileSync(join(app, '.gitignore'), 'started\n.tapthat/\n');
+  writeFileSync(join(app, 'tapthat.config.json'), JSON.stringify({
+    branch: 'dev', host: '127.0.0.1', port: sidecarPort, devServerUrl: `http://localhost:${devPort}`,
+    devServer: { start: true, command: 'node dev.js', sleepAfterMinutes: 30 },
+  }));
+  git(app, 'init', '-q', '-b', 'dev');
+  git(app, 'config', 'user.email', 't@e.com');
+  git(app, 'config', 'user.name', 'T');
+  git(app, 'add', '-A'); git(app, 'commit', '-q', '-m', 'init');
+  mkdirSync(join(app, '.tapthat'));
+  writeFileSync(join(app, '.tapthat', 'state.json'), JSON.stringify({ version: 1, batches: {}, credentials: {}, asleep: true }));
+
+  const env = { ...process.env, TAPTHAT_ENABLE: '1', TAPTHAT_TOKEN: 'test-token-abcdefghijklmnop', NODE_ENV: 'development' };
+  for (const k of Object.keys(env)) if (k.startsWith('RAILWAY_')) delete env[k];
+  const serve = spawn('node', [cli, 'serve'], { cwd: app, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let log = '';
+  serve.stdout.on('data', (c) => { log += c; });
+  serve.stderr.on('data', (c) => { log += c; });
+  const sidecar = `http://127.0.0.1:${sidecarPort}/__tapthat`;
+  const until = async (fn, ms = 20_000) => {
+    for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 200))) {
+      try { if (await fn()) return true; } catch {}
+    }
+    return false;
+  };
+  await until(async () => (await fetch(`${sidecar}/healthz`)).ok);
+  const health = await (await fetch(`${sidecar}/healthz`)).json().catch(() => null);
+  check('booting asleep, the sidecar says so', health?.sleep?.asleep === true, log);
+  check('and does not start the dev server', !existsSync(join(app, 'started')));
+  const page = await fetch(`http://localhost:${devPort}/`, { headers: { accept: 'text/html' } });
+  check("and holds the dev server's port with the asleep page", page.status === 503 && page.headers.get('x-tapthat-asleep') === '1');
+
+  await fetch(`${sidecar}/wake`, { method: 'POST' });
+  const up = await until(async () => (await (await fetch(`http://localhost:${devPort}/`)).text()) === 'dev');
+  check('Wake starts it', up && existsSync(join(app, 'started')), log);
+  await until(async () => JSON.parse(readFileSync(join(app, '.tapthat', 'state.json'), 'utf8')).asleep === false, 3000);
+  check('and the state says awake for the next restart',
+    JSON.parse(readFileSync(join(app, '.tapthat', 'state.json'), 'utf8')).asleep === false);
+
+  serve.kill('SIGTERM');
+  await new Promise((r) => serve.once('exit', r));
+  rmSync(app, { recursive: true, force: true });
 }
 
 rmSync(modDir, { recursive: true, force: true });
